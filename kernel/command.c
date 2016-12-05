@@ -33,6 +33,7 @@ void Run()
     while(isRunning) 
     { 
         keycode code = KeyboardGetCharacter();
+        
         if (code == KEY_RETURN) { 
             _buffer[bufferCounter] = '\0';
             Command_ProcessCommand(_buffer);
@@ -56,9 +57,38 @@ void Run()
                 ConsoleGotoXY(x - 1, y);
                 ConsoleWriteCharacter(' ');
                 ConsoleGotoXY(x - 1, y);
-                --bufferCounter;
+                _buffer[--bufferCounter] = 0;
             }
         } 
+        else if (code == KEY_TAB)
+        {
+            int space = strchr(_buffer, ' ');
+            space = space == -1 ? 0 : space;
+            int found = 0;
+            DiskCommand_AutoComplete((_buffer + space + 1), &found);
+
+            if (found == 1)
+            {
+                // go back to the start
+                int x, y;
+                ConsoleGetXY(&x, &y);
+                ConsoleGotoXY(x - bufferCounter, y);
+                bufferCounter = 0; 
+            } 
+            else if (found > 0)
+            {
+                ConsoleWriteCharacter('\n');
+                // Clear the buffer
+                bufferCounter = 0;
+                ConsoleWriteString(_prompt);
+            }
+
+            while(_buffer[bufferCounter] != 0)
+            {
+                ConsoleWriteCharacter(_buffer[bufferCounter]);
+                bufferCounter++;
+            }
+        }
         else
         {       
             char keyChar = KeyboardConvertKeyToASCII(code);

@@ -336,8 +336,9 @@ void DiskCommand_ReadFile(char* filePath)
 
 // Autocomplete the path 
 // @param path OUT path to autocorrect. 
-void DiskCommand_AutoComplete(char* path)
+void DiskCommand_AutoComplete(char* path, int* num)
 {
+
     // First Step: 
     //  Get to the end of path but exclude the last one. 
     //  IE: path = /root/test/one/te We want to travere to /root/test/one/ 
@@ -346,34 +347,39 @@ void DiskCommand_AutoComplete(char* path)
     bool nextLFN = false;
     int charLoc = 0;
     int loc = 0;
-    while ((loc = strchr((temp + charLoc), '\\')) != -1)
+    while ((loc = strchr((temp + charLoc), '\\') + 1) != 0)
     {
         charLoc += loc;
     }
 
-    // The last \ should be set to NULL. 
-    *(temp + charLoc) = 0
+    if (charLoc != 0)
+    {
+        *(temp + charLoc - 1) = 0;
+    }
 
 
     // Second step:
     //  Go over each entry in the directory 
-    //  strncmp with te, append any matches to a buffer, delimit \\. 
+    //  strncmp with te, append any matches to a buffer, delimit \\.
+    char found[1024]; 
+    char* tempFound = found;
     FILE file;
-    if (temp[0] == '\\')
+    if (path[0] == '\\')
     {
         file = FsFat12_Open(temp);
     }
-    else
+    else if (charLoc > 0)
     {
         file = FsFat12_OpenFrom(_cwd, temp);
     }
     
 
-    if (file.Flag == FS_DIRECTORY)
+    if (file.Flags == FS_DIRECTORY)
     {
         DirectoryEntry entry[16];
-        pDirectoryEntry tempEntry = FsFat12_ConvertFileToDirectory(&file, &entry);
-        char* compare = temp + charLoc + 1;
+        FsFat12_ConvertFileToDirectory(&file, &entry);
+        pDirectoryEntry tempEntry = entry;
+        char* compare = temp + charLoc;
         int compareLen = strlen(compare);
 
         if (compareLen > 0) 
@@ -384,20 +390,42 @@ void DiskCommand_AutoComplete(char* path)
                 if (tempEntry->Attrib != 0x0f)
                 {
                     char tempName[256];
-                    FsFat12_GetNameFromDirectoryEntry(tempEntry, tempName);
+                    FsFat12_GetNameFromDirectoryEntry(tempEntry, tempName, nextLFN);
 
-                    if (strncmp(tempName, compare, compareLen))
+                    if (strncmp(tempName, compare, compareLen) == 0)
                     {
-                        // Copy over the tempName
-                        strcpy(compare, tempName);
-                        break;
+                        *num = *num + 1;                    
+                        int tempLen = strlen(tempName);
+
+                        memcpy(tempFound, tempName, tempLen);
+                        tempFound += tempLen + 1;
+                        *(tempFound - 1) = ' ';
                     }
                 }
 
                 nextLFN = tempEntry->Attrib == 0x0F;
             }
         }
+        
+        *(tempFound) = 0;
+
+        // If we've only found one, autocomplete
+        if (*num == 1)
+        {
+            int delimiterLoc = strchr(found, ' ');
+            memcpy(compare, found, delimiterLoc);
+        }
+        else if (*num > 0)
+        {
+            // Otherwise just print them out.`
+            ConsoleWriteCharacter('\n');
+            ConsoleWriteString(found);
+        }
     }
 
-    *(temp + charLoc) = '\\';
+    // Restore the backspace
+    if (charLoc != 0) 
+    {
+        *(temp + charLoc - 1) = '\\';
+    }
 }

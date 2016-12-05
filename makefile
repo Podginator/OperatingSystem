@@ -31,7 +31,7 @@ $(IMAGE).img : bootloader kernel
 #	Copy the Test files.
 	cmd /c "copytestfiles.bat"
 # 	Launch Bocks #TO DO REMOVE.
-	cmd /c "bochs -f C:\Users\Podginator\Desktop\Step9\bochsrc.bxrc -q -noconsole" 
+	cmd /c "bochs -f C:\Users\Podginator\Documents\GitHub\OperatingSystem\bochsrc.bxrc -q -noconsole" 
 
 
 $(IMAGE).iso: $(IMAGE).img
