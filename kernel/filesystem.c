@@ -27,6 +27,23 @@ uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
 
 // ** Forward Declarations ** 
 static inline void ExtractNextEntry(char** filePath, char* filenameBuffer);
+static inline FILE ConvertToFile(pDirectoryEntry entry, char* name);
+
+
+// Convert a pointer to a directory entry to a FILE structure. 
+// @param entry the entry to convert
+// @param the name to give the file.
+static inline FILE ConvertToFile(pDirectoryEntry entry, char* name)
+{
+    FILE file; 
+    strcpy(file.Name, name);
+    file.Eof = 0;
+    file.Position = 0;
+    file.CurrentCluster = entry->FirstCluster;
+    file.FileLength = entry->FileSize;
+    file.Flags = (entry->Attrib & 0x10) ? FS_DIRECTORY : FS_FILE;
+    return file;
+}
 
 // Extract the name and extn from a correctly formatted file path 
 // @param filePath the filepath to extract from (We Increment this each time)
@@ -185,6 +202,13 @@ FILE FsFat12_Open(const char* filename)
     FILE res; 
     res.Flags = FS_INVALID; 
     int i = 0;
+
+    // Handle the case where we're just retrieving the root directory
+    if (strcmp(filename, "\\") == 0)
+    {
+        return ConvertToFile(FsFat12_GetRootDirectory(), "\\");        
+    }
+
     // Retrieve the initial Directory.
     for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
     {
@@ -201,7 +225,6 @@ FILE FsFat12_Open(const char* filename)
             // or we have but have still not found a file. 
             if (!(res.Flags & FS_INVALID) || (res.Flags & FS_TRAVERSED))
             {   
-                
                 // In either case we either return a found file
                 // Or nothing. This helps us terminate the loops early.
                 return res;
@@ -266,19 +289,12 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                     // We have traversed the file slighty.
                     // This indicates we have traversed the fs slightly
                     // If we failed now we know that the file doesn't exist. 
-                    failed.Flags &= FS_TRAVERSED;
+                    failed.Flags |= FS_TRAVERSED;
                     
                     if (done)
                     {
-                        FILE file; 
-                        strcpy(file.Name, filename);
-                        file.Eof = 0;
-                        file.Position = 0;
-                        file.CurrentCluster = tempEntry->FirstCluster;
-                        file.FileLength = tempEntry->FileSize;
-                        file.Flags = (tempEntry->Attrib & 0x10) ? FS_DIRECTORY : FS_FILE;
-                        return file;
-                    }
+                        return ConvertToFile(tempEntry, filename);
+                    }                    
                     else 
                     {
                         // If we're not at the last path

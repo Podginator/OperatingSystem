@@ -4,7 +4,7 @@ rem in the line below and in the line at the end of the file.
 imdisk -a -t file -f uodos.img -o rem -m y:
 
 rem Copy the Testing Directory.
-xcopy /e /v C:\Users\Podginator\Desktop\Step9\Testing y:Testing /i 
+xcopy /e /v %~dp0\Testing y:Testing /i 
 copy HiTest.txt y:HiTest.txt
 
 rem

@@ -16,7 +16,6 @@ static inline char* PrepareFilePath(char* filepath);
 static inline void GetDateCreated(uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year);
 static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds);
 static inline void PrintDirectoryEntry(pDirectoryEntry entry, bool isLFN);
-static inline void ListFilesInDirectory(pDirectoryEntry entry);
 static void SetPresentWorkingDirectory(char* pwd);
 
 // Extract the date created from the entry->DateCreated property. 
@@ -335,7 +334,8 @@ void DiskCommand_ReadFile(char* filePath)
 }
 
 // Autocomplete the path 
-// @param path OUT path to autocorrect. 
+// @param path OUT path to autocomplete
+// @param num OUT number of results foumd 
 void DiskCommand_AutoComplete(char* path, int* num)
 {
 
@@ -344,25 +344,21 @@ void DiskCommand_AutoComplete(char* path, int* num)
     //  IE: path = /root/test/one/te We want to travere to /root/test/one/ 
     //  and get te to autocorrect. 
     char* temp = path;
-    bool nextLFN = false;
     int charLoc = 0;
     int loc = 0;
-    while ((loc = strchr((temp + charLoc), '\\') + 1) != 0)
+    while ((loc = strchr((temp + charLoc), '\\') + 1) > 0)
     {
         charLoc += loc;
     }
-
-    if (charLoc != 0)
-    {
-        *(temp + charLoc - 1) = 0;
-    }
-
+    *(temp + charLoc) = 0;
 
     // Second step:
     //  Go over each entry in the directory 
-    //  strncmp with te, append any matches to a buffer, delimit \\.
+    //  strncmp with 'te', append any matches to a buffer, delimit \\. 
     char found[1024]; 
+    bool nextLFN = false;
     char* tempFound = found;
+    
     FILE file;
     if (path[0] == '\\')
     {
@@ -406,9 +402,8 @@ void DiskCommand_AutoComplete(char* path, int* num)
                 nextLFN = tempEntry->Attrib == 0x0F;
             }
         }
-        
         *(tempFound) = 0;
-
+        
         // If we've only found one, autocomplete
         if (*num == 1)
         {
@@ -423,9 +418,5 @@ void DiskCommand_AutoComplete(char* path, int* num)
         }
     }
 
-    // Restore the backspace
-    if (charLoc != 0) 
-    {
-        *(temp + charLoc - 1) = '\\';
-    }
+    *(temp + charLoc) = '\\';
 }
