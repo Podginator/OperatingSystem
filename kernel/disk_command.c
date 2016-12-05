@@ -16,7 +16,8 @@ static inline char* PrepareFilePath(char* filepath);
 static inline void GetDateCreated(uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year);
 static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds);
 static inline void PrintDirectoryEntry(pDirectoryEntry entry, bool isLFN);
-void SetPresentWorkingDirectory(char* pwd);
+static inline void ListFilesInDirectory(pDirectoryEntry entry);
+static void SetPresentWorkingDirectory(char* pwd);
 
 // Extract the date created from the entry->DateCreated property. 
 // @param dateCreated the Date Created 
@@ -211,10 +212,9 @@ void DiskCommand_Init()
     SetPresentWorkingDirectory("\\");
 }
 
-// Hide the implementation of this
 // Set the Present Working Directory.
 // @param pwd what to set the Present Working Directory as
-void SetPresentWorkingDirectory(char* pwd)
+static void SetPresentWorkingDirectory(char* pwd)
 {
     // Copy the pwd to the 
     size_t pwdSize = strlen(pwd);
@@ -254,6 +254,7 @@ void DiskCommand_ChangeDirectory(char* dir)
         ConsoleWriteString(PrepareFilePath(tempDir));
     }
 }
+
 
 // Process the LS Command 
 // @param the filePath of the file to read files from. 
@@ -320,7 +321,7 @@ void DiskCommand_ReadFile(char* filePath)
             {
                 // Or until CTRL + C is clicked
                 if (KeyboardGetCtrlKeyState() && KeyboardGetCharacter() == KEY_C) {
-                    // We are done, so just return
+                    // If we have hit Ctrl+C we abandon this and therefore return.
                     return;
                 }
             }
@@ -341,18 +342,62 @@ void DiskCommand_AutoComplete(char* path)
     //  Get to the end of path but exclude the last one. 
     //  IE: path = /root/test/one/te We want to travere to /root/test/one/ 
     //  and get te to autocorrect. 
-
     char* temp = path;
+    bool nextLFN = false;
     int charLoc = 0;
-    while ((charLoc = strchr(temp, '\\') != -1));
+    int loc = 0;
+    while ((loc = strchr((temp + charLoc), '\\')) != -1)
+    {
+        charLoc += loc;
+    }
 
+    // The last \ should be set to NULL. 
+    *(temp + charLoc) = 0
 
 
     // Second step:
     //  Go over each entry in the directory 
     //  strncmp with te, append any matches to a buffer, delimit \\. 
+    FILE file;
+    if (temp[0] == '\\')
+    {
+        file = FsFat12_Open(temp);
+    }
+    else
+    {
+        file = FsFat12_OpenFrom(_cwd, temp);
+    }
+    
 
+    if (file.Flag == FS_DIRECTORY)
+    {
+        DirectoryEntry entry[16];
+        pDirectoryEntry tempEntry = FsFat12_ConvertFileToDirectory(&file, &entry);
+        char* compare = temp + charLoc + 1;
+        int compareLen = strlen(compare);
 
-    // Third Step: 
-    //  strchr \\ and if -1 append to the file path, otherwise print out each of them.
+        if (compareLen > 0) 
+        {
+            // Read all entries in the current directory.
+            for (size_t j = 0; j < 16; j++, tempEntry++)
+            {
+                if (tempEntry->Attrib != 0x0f)
+                {
+                    char tempName[256];
+                    FsFat12_GetNameFromDirectoryEntry(tempEntry, tempName);
+
+                    if (strncmp(tempName, compare, compareLen))
+                    {
+                        // Copy over the tempName
+                        strcpy(compare, tempName);
+                        break;
+                    }
+                }
+
+                nextLFN = tempEntry->Attrib == 0x0F;
+            }
+        }
+    }
+
+    *(temp + charLoc) = '\\';
 }
