@@ -35,7 +35,7 @@ static void GetDateCreated(const uint16_t dateCreated, uint8_t* day, uint8_t* mo
 // @param timeCreated the time it was created
 // @param hour OUT the hour it was created
 // @param minutes OUT the minutes it was created 
-// @param isPm OUT True if PM False if AM 
+// @param seconds OUT Number of seconds (0-29) - 2 second accuracy 
 // @pre:  timeCreated should be in the DirectoryEntry timeCreated format.
 static void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds)
 {
@@ -63,19 +63,24 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
     {
         directory = FsFat12_OpenFrom(_cwd, dir);
         
-        strcpy(outPath, _pwd);
-        if (_pwd[1] != NULL)
-        { 
-            // Currently PWD is '\'
-            strcat(outPath, _pwd, "\\");
-        }
+        if (outPath)
+        {
+            strcpy(outPath, _pwd);
+            if (_pwd[1] != NULL)
+            { 
+                // Currently PWD is '\'
+                strcat(outPath, _pwd, "\\");
+            }
 
-        strcat(outPath, outPath, dir);
+            strcat(outPath, outPath, dir);
+        }
     } 
     else 
     {
-        // Otherwise let's just copy
-        strcpy(outPath, dir);
+        if (outPath) {
+            // Otherwise let's just copy
+            strcpy(outPath, dir);
+        }
         directory = FsFat12_Open(dir);
     }
 
@@ -290,8 +295,8 @@ void DiskCommand_ListFiles()
 void DiskCommand_ReadFile(char* filePath)
 {
     // We don't particularly care about the full filepath in this instance
-    char filepath[256];
-    FILE directory = GetFileFromPath(filePath, filepath);
+    FILE directory = GetFileFromPath(filePath, NULL);
+
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_FILE)
     {
@@ -349,20 +354,10 @@ void DiskCommand_AutoComplete(char* path, int* num)
     
     if (charLoc > -1) 
     {
-        FILE file;
+        
         char stored = *(temp + charLoc);
         *(temp + charLoc) = 0;
-        
-        // Get to the correct directory.
-        if (path[0] == '\\')
-        {
-            file = FsFat12_Open(temp);
-        }
-        else
-        {
-            file = FsFat12_OpenFrom(_cwd, temp);
-        }
-        // Restore the missing variable
+        FILE file = GetFileFromPath(temp, NULL);
         *(temp + charLoc)  = stored;
 
         if (file.Flags == FS_DIRECTORY)
@@ -379,17 +374,15 @@ void DiskCommand_AutoComplete(char* path, int* num)
     }
 
 
-    char found[1024]; 
     bool nextLFN = false;
+    char found[1024]; 
     char* tempFound = found;
-    // This is a bad check, but makes sense
     // If the first byte is 0 there's nothing remaining. 
-    // We wouldn't want to enter this bit of code if that were the case
     if (entry[0].Filename[0] != 0x00) 
     {
         pDirectoryEntry tempEntry = entry;
         char* compare = temp + charLoc;
-        int compareLen = strlen(compare);
+        size_t compareLen = strlen(compare);
 
         if (compareLen > 0) 
         {
@@ -398,14 +391,12 @@ void DiskCommand_AutoComplete(char* path, int* num)
             {
                 if (tempEntry->Attrib != 0x0f)
                 {
-                    char tempName[256];
-                    FsFat12_GetNameFromDirectoryEntry(tempEntry, tempName, nextLFN);
+                    FsFat12_GetNameFromDirectoryEntry(tempEntry, tempFound, nextLFN);
 
-                    if (strncmp(tempName, compare, compareLen) == 0)
+                    if (strncmp(tempFound, compare, compareLen) == 0)
                     {
                         *num = *num + 1;                    
-                        int tempLen = strlen(tempName);
-                        memcpy(tempFound, tempName, tempLen);
+                        size_t tempLen = strlen(tempFound);
                         tempFound += tempLen + 1;
                         *(tempFound - 1) = ' ';
                     }
