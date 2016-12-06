@@ -52,33 +52,22 @@ static inline FILE ConvertToFile(pDirectoryEntry entry, char* name)
 // @return parsed valid file path
 static inline void ExtractNextEntry(char** filePath, char* filenameBuffer)
 {
-    int needle = strchr(*filePath, '\\');
-    int secNeedle = -1;
-    if (needle != -1) 
+    // Ignore the first backslash
+    if (*filePath[0] == '\\')
     {
-        *filePath += needle + 1;
-        secNeedle = strchr(*filePath, '\\');
-
-        // Is there anything proceeding this? 
-        // If there isn't we have a path like the following
-        // /File/Path/
-        if (*filePath[secNeedle + 1] == NULL) 
-        {
-            // So remove it (It's unnecessary)
-            *filePath[secNeedle + 1] = 0;
-        }
+        (*filePath)++;
     }
     
-    // /File/Path
-    if (secNeedle == -1)
+    int needle = strchr(*filePath, '\\');    
+    if (needle == -1)
     {
-        secNeedle = strlen(*filePath); 
+        needle = strlen(*filePath); 
     }
-
-    memcpy(filenameBuffer, *filePath, secNeedle);
+    memcpy(filenameBuffer, *filePath, needle);
+    
     // Nullterminate it.
-    *(filenameBuffer + secNeedle) = 0;
-    *filePath += secNeedle;
+    *(filenameBuffer + needle) = 0;
+    *filePath += needle;
 }
 
 // Returns the root directory
@@ -206,7 +195,10 @@ FILE FsFat12_Open(const char* filename)
     // Handle the case where we're just retrieving the root directory
     if (strcmp(filename, "\\") == 0)
     {
-        return ConvertToFile(FsFat12_GetRootDirectory(), "\\");        
+        res.Flags = FS_DIRECTORY;
+        res.CurrentCluster = 0;
+        strcpy(res.Name, "\\");
+        return res;
     }
 
     // Retrieve the initial Directory.

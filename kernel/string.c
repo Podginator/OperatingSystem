@@ -181,7 +181,7 @@ errno_t strcpy_s(char *destination, size_t numberOfElements, const char *source)
 	while (numberOfElements--)
 	{
 		charSource = *sourceTemp++;
-		*destinationTemp = charSource;
+		*destinationTemp++ = charSource;
 		if (charSource == 0)
 		{
 			// Copy succeeded

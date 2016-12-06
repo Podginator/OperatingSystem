@@ -55,35 +55,28 @@ static void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes
 // @post if outPath is not null the outpath will be set the the pwd, this handles ../. 
 static inline FILE GetFileFromPath(char* dir, char* outPath) 
 {
-    size_t dirSize = strlen(dir);
-    int curPwdLen = strlen(_pwd);
-    char tempDir[256];
-
-
     FILE directory; 
     directory.Flags = FS_INVALID;
+
     // If the first character is not a backspace we are not starting from root.
     if (dir[0] != '\\') 
     {
-        strcat(tempDir, "\\", dir);
-        directory = FsFat12_OpenFrom(_cwd, tempDir);
-        if (curPwdLen > 1)
-        {
-            strcat(tempDir, _pwd, "\\");
-            strcat(tempDir, tempDir, dir);
+        directory = FsFat12_OpenFrom(_cwd, dir);
+        
+        strcpy(outPath, _pwd);
+        if (_pwd[1] != NULL)
+        { 
+            // Currently PWD is '\'
+            strcat(outPath, _pwd, "\\");
         }
+
+        strcat(outPath, outPath, dir);
     } 
     else 
     {
         // Otherwise let's just copy
-        strcpy(tempDir, dir);
+        strcpy(outPath, dir);
         directory = FsFat12_Open(dir);
-    }
-
-    // Copy the tempdir.
-    if (outPath)
-    {
-        strcpy(outPath, tempDir);
     }
 
     return directory;
@@ -254,7 +247,6 @@ void DiskCommand_ChangeDirectory(char* dir)
     }
 }
 
-
 // Process the LS Command 
 // @param the filePath of the file to read files from. 
 void DiskCommand_ListFiles()
@@ -298,7 +290,8 @@ void DiskCommand_ListFiles()
 void DiskCommand_ReadFile(char* filePath)
 {
     // We don't particularly care about the full filepath in this instance
-    FILE directory = GetFileFromPath(filePath, NULL);
+    char filepath[256];
+    FILE directory = GetFileFromPath(filePath, filepath);
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_FILE)
     {
@@ -342,38 +335,58 @@ void DiskCommand_AutoComplete(char* path, int* num)
     // First Step: 
     //  Get to the end of path but exclude the last one. 
     //  IE: path = /root/test/one/te We want to travere to /root/test/one/ 
-    //  and get te to autocorrect. 
+    //  and get te to autocorrect.    
+    DirectoryEntry entry[16];
+
     char* temp = path;
-    int charLoc = 0;
-    int loc = 0;
+    int charLoc = -1;
+    int loc = -1;
+
     while ((loc = strchr((temp + charLoc), '\\') + 1) > 0)
     {
         charLoc += loc;
     }
-    *(temp + charLoc) = 0;
+    
+    if (charLoc > -1) 
+    {
+        FILE file;
+        char stored = *(temp + charLoc);
+        *(temp + charLoc) = 0;
+        
+        // Get to the correct directory.
+        if (path[0] == '\\')
+        {
+            file = FsFat12_Open(temp);
+        }
+        else
+        {
+            file = FsFat12_OpenFrom(_cwd, temp);
+        }
+        // Restore the missing variable
+        *(temp + charLoc)  = stored;
 
-    // Second step:
-    //  Go over each entry in the directory 
-    //  strncmp with 'te', append any matches to a buffer, delimit \\. 
+        if (file.Flags == FS_DIRECTORY)
+        {    
+            FsFat12_ConvertFileToDirectory(&file, &entry);
+        } 
+    }
+    else
+    {
+        // We later use this variable to find the correct index 
+        // of the thing to search for. We don't want to be going backwards (+-1).
+        charLoc = 0;
+        memcpy(entry, _cwd, 512);
+    }
+
+
     char found[1024]; 
     bool nextLFN = false;
     char* tempFound = found;
-    
-    FILE file;
-    if (path[0] == '\\')
+    // This is a bad check, but makes sense
+    // If the first byte is 0 there's nothing remaining. 
+    // We wouldn't want to enter this bit of code if that were the case
+    if (entry[0].Filename[0] != 0x00) 
     {
-        file = FsFat12_Open(temp);
-    }
-    else if (charLoc > 0)
-    {
-        file = FsFat12_OpenFrom(_cwd, temp);
-    }
-    
-
-    if (file.Flags == FS_DIRECTORY)
-    {
-        DirectoryEntry entry[16];
-        FsFat12_ConvertFileToDirectory(&file, &entry);
         pDirectoryEntry tempEntry = entry;
         char* compare = temp + charLoc;
         int compareLen = strlen(compare);
@@ -392,7 +405,6 @@ void DiskCommand_AutoComplete(char* path, int* num)
                     {
                         *num = *num + 1;                    
                         int tempLen = strlen(tempName);
-
                         memcpy(tempFound, tempName, tempLen);
                         tempFound += tempLen + 1;
                         *(tempFound - 1) = ' ';
@@ -417,6 +429,4 @@ void DiskCommand_AutoComplete(char* path, int* num)
             ConsoleWriteString(found);
         }
     }
-
-    *(temp + charLoc) = '\\';
-}
+} 
