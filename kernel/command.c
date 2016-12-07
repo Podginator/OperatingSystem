@@ -63,9 +63,9 @@ void Run()
         else if (code == KEY_TAB)
         {
             int space = strchr(_buffer, ' ');
-            space = space == -1 ? 0 : space;
+            space = space == -1 ? 0 : space + 1;
             int found = 0;
-            DiskCommand_AutoComplete((_buffer + space + 1), &found);
+            DiskCommand_AutoComplete((_buffer + space), &found);
 
             if (found == 1)
             {
@@ -172,7 +172,7 @@ void Command_ProcessCommand(char* cmd)
         char* temp = cmd + 7;
         Command_Prompt(temp);
     }
-    else if (strncmp("readdisk", cmd, 8) == 0) 
+    else if (strncmp("readdisk ", cmd, 9) == 0) 
     {
         char* temp = cmd + 9;
 

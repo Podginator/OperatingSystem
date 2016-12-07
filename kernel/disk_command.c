@@ -349,10 +349,10 @@ void DiskCommand_AutoComplete(char* path, int* num)
     
     if (charLoc > -1) 
     {
-        *(temp + charLoc - 1) = 0;
+        char character = *(temp + charLoc); 
+        *(temp + charLoc) = 0;
         FILE file = GetFileFromPath(temp, NULL);
-        *(temp + charLoc - 1)  = '\\';
-
+        *(temp + charLoc)  = character;
         if (file.Flags == FS_DIRECTORY)
         {    
             FsFat12_ConvertFileToDirectory(&file, &entry);
