@@ -11,5 +11,7 @@ void DiskCommand_ChangeDirectory(char* dir);
 void DiskCommand_ListFiles();
 // Process The ReadFile  
 void DiskCommand_ReadFile(char* filePath);
+// Autocomplete working path
+void DiskCommand_AutoComplete(char* path, int* num);
 
 #endif

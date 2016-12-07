@@ -21,8 +21,8 @@ void * memcpy(void * destination, const void * source, size_t count);
 errno_t memcpy_s(void *destination, size_t destinationSize, const void *source, size_t count);
 void * memset(void *destination, char val, size_t count);
 unsigned short * memsetw(unsigned short * destination, unsigned short val, size_t count);
-int atoi(char* intString);
-int strchr(char* haystack, char needle);
+int atoi(const char* intString);
+int strchr(const char* haystack, char needle);
 char CharToUpper(char character);
 
 

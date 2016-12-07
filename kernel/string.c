@@ -105,7 +105,8 @@ int strncmp(const char* str1, const char* str2, size_t size) {
 
 // atoi 
 // @param intString the string
-int atoi(char* intString) 
+// @return the first number instance occuring in a string
+int atoi(const char* intString) 
 {
 	int res = 0;
 	bool hitNum = false;
@@ -139,7 +140,7 @@ char * strcpy(char * destination, const char * source)
 char* strcat(char* destination, const char* str1, const char* str2)
 {
 	char* temp = destination;
-	char* copyTemp = str1;
+	const char* copyTemp = str1;
 	
 	while(*copyTemp != '\0')
     {
@@ -298,7 +299,7 @@ unsigned short * memsetw(unsigned short * destination, unsigned short val, size_
 
 
 // Return the position of a character in a string 
-int strchr(char* haystack, char needle) 
+int strchr(const char* haystack, char needle) 
 { 
 	int result = 0;
 	int cnt = 0;	

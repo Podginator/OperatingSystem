@@ -88,7 +88,6 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
 }
 
 // Prepare the file path.
-// TODO: Look into a way doing this by traversing the pDirectoryEntries.
 // @param filepath - The file Path 
 // @return the corrected file Path.
 static char* PrepareFilePath(char* filepath) 
@@ -98,7 +97,7 @@ static char* PrepareFilePath(char* filepath)
 
     while (*temp != 0)
     {
-        // TO DO: Fix. 
+        // TODO: Fix. 
         // Though: This WILL short circuit, which means we don't have to evaluate everything
         // Hence: \\ is more likely than null, and I'd argue that .. is more likely than .
         // Realistically .. is only likely to be used at the START of a cd command 
@@ -355,7 +354,7 @@ void DiskCommand_AutoComplete(char* path, int* num)
         *(temp + charLoc)  = character;
         if (file.Flags == FS_DIRECTORY)
         {    
-            FsFat12_ConvertFileToDirectory(&file, &entry);
+            FsFat12_ConvertFileToDirectory(&file, entry);
         } 
     }
     else

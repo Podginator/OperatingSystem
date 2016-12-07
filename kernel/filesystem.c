@@ -26,7 +26,7 @@ uint32_t rootSize;
 uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
 
 // ** Forward Declarations ** 
-static inline void ExtractNextEntry(char** filePath, char* filenameBuffer);
+static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer);
 static inline FILE ConvertToFile(pDirectoryEntry entry, char* name);
 
 
@@ -50,7 +50,7 @@ static inline FILE ConvertToFile(pDirectoryEntry entry, char* name)
 // @param fileNameBuffer the buffer to put the filename in 
 // @param extBuffer the buffer to put the ext in .`
 // @return parsed valid file path
-static inline void ExtractNextEntry(char** filePath, char* filenameBuffer)
+static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer)
 {
     // Ignore the first backslash
     if (*filePath[0] == '\\')
@@ -239,7 +239,7 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
 {
     bool done = false;
     bool isLFN = false;
-    char* temp = filePath;
+    const char* temp = filePath;
     pDirectoryEntry tempEntry = entrySector;
     FILE failed;
     failed.Flags = FS_INVALID;
@@ -274,6 +274,7 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                 FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, isLFN);
 
                 // TODO: Case Insensitive Or NOT? have a strcasecmp
+                // But since adding Long File Names seems redundant. Rather it work like BASH.
                 if (strcmp(filename, nextFilename) == 0) 
                 {
                     // We have traversed the file slighty.
