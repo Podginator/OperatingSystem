@@ -143,7 +143,6 @@ bool FsFat12_ConvertFileToDirectory(PFILE file, pDirectoryEntry entry)
 {
     if (file && file->Flags == FS_DIRECTORY)
     {
-
         if (file->CurrentCluster >= 2) 
         {
             // Copy entire directory structure
@@ -204,7 +203,6 @@ FILE FsFat12_Open(const char* filename)
     // Retrieve the initial Directory.
     for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
     {
-        // 512 in here
         char buffer[512];
         memcpy(buffer, FloppyDriveReadSector(offsetRoot + i), 512); 
         pDirectoryEntry directory = (pDirectoryEntry) buffer;
@@ -275,8 +273,8 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                 char filename[256];
                 FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, isLFN);
 
-                // compare case insensitively to the filename
-                if (strcasecmp(filename, nextFilename) == 0) 
+                // TODO: Case Insensitive Or NOT? have a strcasecmp
+                if (strcmp(filename, nextFilename) == 0) 
                 {
                     // We have traversed the file slighty.
                     // This indicates we have traversed the fs slightly

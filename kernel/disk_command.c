@@ -68,7 +68,7 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
             strcpy(outPath, _pwd);
             if (_pwd[1] != NULL)
             { 
-                // Currently PWD is '\'
+                // Currently PWD is not '\'
                 strcat(outPath, _pwd, "\\");
             }
 
@@ -161,7 +161,6 @@ static inline void PrintDirectoryEntry(pDirectoryEntry entry, bool isLongFileNam
     ConsoleWriteCharacter('/');
     ConsoleWriteInt(year, 10);
 
-    // Write the Gap
     ConsoleWriteString("  ");
 
     // Write the DateTime
@@ -213,12 +212,8 @@ void DiskCommand_Init()
 // @param pwd what to set the Present Working Directory as
 static void SetPresentWorkingDirectory(char* pwd)
 {
-    // Copy the pwd to the 
-    size_t pwdSize = strlen(pwd);
-    memcpy(_pwd, pwd, pwdSize);
-
-    // Null Terminate at the end.
-    _pwd[pwdSize] = 0;
+    // Copy the pwd to the _pwd 
+    strcpy(_pwd, pwd);
 }
 
 // Get the present working directory
@@ -354,11 +349,9 @@ void DiskCommand_AutoComplete(char* path, int* num)
     
     if (charLoc > -1) 
     {
-        
-        char stored = *(temp + charLoc);
-        *(temp + charLoc) = 0;
+        *(temp + charLoc - 1) = 0;
         FILE file = GetFileFromPath(temp, NULL);
-        *(temp + charLoc)  = stored;
+        *(temp + charLoc - 1)  = '\\';
 
         if (file.Flags == FS_DIRECTORY)
         {    
@@ -386,7 +379,6 @@ void DiskCommand_AutoComplete(char* path, int* num)
 
         if (compareLen > 0) 
         {
-            // Read all entries in the current directory.
             for (size_t j = 0; j < 16; j++, tempEntry++)
             {
                 if (tempEntry->Attrib != 0x0f)
