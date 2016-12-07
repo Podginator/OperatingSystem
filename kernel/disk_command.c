@@ -360,8 +360,7 @@ void DiskCommand_AutoComplete(char* path, int* num)
     }
     else
     {
-        // We later use this variable to find the correct index 
-        // of the thing to search for. We don't want to be going backwards (+-1).
+        // Set Charloc to 0 (As we later use this to find what to compare too) 
         charLoc = 0;
         memcpy(entry, _cwd, 512);
     }
