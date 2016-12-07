@@ -131,6 +131,7 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
 // Converts Sector Number to Directory  
 // @param sectorNum the sector number
 // @param entry - entry to write to 
+// @post : DMA Buffer used. Will be overriden on next call. 
 pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum)
 {
     if (sectorNum > 2) 
