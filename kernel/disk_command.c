@@ -202,7 +202,8 @@ static inline void PrintDirectoryEntry(pDirectoryEntry entry, bool isLongFileNam
 void DiskCommand_Init()
 {    
     // Copy the root directory.
-    memcpy(_cwd, FsFat12_GetRootDirectory(), 512); 
+    memcpy(_cwd, FsFat12_GetDirectoryFromSector(2), 512);
+ 
     // Initialize to the pwd being empty.
     SetPresentWorkingDirectory("\\");
 }
@@ -234,7 +235,7 @@ void DiskCommand_ChangeDirectory(char* dir)
     {
         // Return current directory? 
         // Is the memcpy a better use of our resources. Probably. Actually.
-        FsFat12_ConvertFileToDirectory(&directory, _cwd);
+        memcpy(_cwd, FsFat12_GetDirectoryFromSector(directory.CurrentCluster), 512);
 
         // Copy the pwd.
         SetPresentWorkingDirectory(PrepareFilePath(tempDir));
@@ -345,16 +346,17 @@ void DiskCommand_AutoComplete(char* path, int* num)
     {
         charLoc += loc;
     }
-    
+
     if (charLoc > -1) 
     {
         char character = *(temp + charLoc); 
         *(temp + charLoc) = 0;
         FILE file = GetFileFromPath(temp, NULL);
-        *(temp + charLoc)  = character;
+        *(temp + charLoc) = character;
+
         if (file.Flags == FS_DIRECTORY)
-        {    
-            FsFat12_ConvertFileToDirectory(&file, entry);
+        {   
+            memcpy(entry, (pDirectoryEntry)FsFat12_GetDirectoryFromSector(file.CurrentCluster), 512);
         } 
     }
     else

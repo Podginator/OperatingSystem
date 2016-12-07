@@ -67,15 +67,7 @@ static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer)
     
     // Nullterminate it.
     *(filenameBuffer + needle) = 0;
-    *filePath += needle;
-}
-
-// Returns the root directory
-// @return the Root Directory Pointer 
-// @Post: Will be overriden when the DMA buffer is overriden
-pDirectoryEntry FsFat12_GetRootDirectory() 
-{
-    return (pDirectoryEntry) FloppyDriveReadSector(offsetRoot);
+    *filePath += needle + 1;
 }
 
 // Get Name From DirectoryEntry 
@@ -136,28 +128,21 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
     *temp = 0;
 }
 
-// Converts a File back to a Directory  
-// @param Pointer to the file
+// Converts Sector Number to Directory  
+// @param sectorNum the sector number
 // @param entry - entry to write to 
-bool FsFat12_ConvertFileToDirectory(PFILE file, pDirectoryEntry entry)
+pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum)
 {
-    if (file && file->Flags == FS_DIRECTORY)
+    if (sectorNum > 2) 
     {
-        if (file->CurrentCluster >= 2) 
-        {
-            // Copy entire directory structure
-            memcpy(entry, FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (file->CurrentCluster - 2)), 512);
-        } 
-        else 
-        {
-            // Copy the root directory.
-            memcpy(entry, FsFat12_GetRootDirectory(), 512);
-        }
-
-        return true;
+        // Copy entire directory structure
+        return (pDirectoryEntry) FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (sectorNum - 2));
+    } 
+    else 
+    {
+        // Copy the root directory.
+        return (pDirectoryEntry) FloppyDriveReadSector(offsetRoot);
     }
-
-    return false;
 }
 
 // Initialize the file system.
@@ -238,7 +223,6 @@ FILE FsFat12_Open(const char* filename)
 FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath) 
 {
     bool done = false;
-    bool isLFN = false;
     const char* temp = filePath;
     pDirectoryEntry tempEntry = entrySector;
     FILE failed;
@@ -247,6 +231,7 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
     while (!done)
     {
         char nextFilename[256];
+        bool isLFN = false;
         ExtractNextEntry(&temp, nextFilename);
 
         // if we've reached the end of the path we're done. (IE: We've hit null in the path)
@@ -267,9 +252,11 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                 // There are no remaining files in this directory.
                 return failed;
             }
+ 
 
             if (tempEntry->Attrib != 0x0F)
             {
+  
                 char filename[256];
                 FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, isLFN);
 
@@ -289,14 +276,10 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                     else 
                     {
                         // If we're not at the last path
-                        if (tempEntry->Attrib & DIR_DIRECTORY ) 
+                        if (tempEntry->Attrib & DIR_DIRECTORY) 
                         {
-                            // Set the new sector as the directory, then continue.
-                            // Then look for the next part.
-                            tempEntry = (pDirectoryEntry) FloppyDriveReadSector(
-                                PHYSICAL_PADDING + offsetFat + (tempEntry->FirstCluster - 2));
+                            tempEntry = FsFat12_GetDirectoryFromSector(tempEntry->FirstCluster);
                         }
-                    
                         //Break and repeat the outer loop.
                         break;
                     }

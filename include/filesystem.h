@@ -66,16 +66,11 @@ typedef struct _LongFileNameEntry
 typedef LongFileNameEntry * pLongFileNameEntry;
 
 
-// Returns a pointer to the Root Directory. 
-// @return Pointer to the root directory. 
-pDirectoryEntry FsFat12_GetRootDirectory();
-
 // Get Name From DirectoryEntry 
 // @param entry the directoy
 // @param buffer OUT the buffer to write the name to 
 // @param isLFN is this Long File Name?
 void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool isLFN);
-
 
 // Initialise the fs
 void FsFat12_Initialise();
@@ -99,10 +94,10 @@ unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length
 // @param file - Pointer to the file to close
 void FsFat12_Close(PFILE file);
 
-// Converts a File back to a Directory  
+// Converts Sector Number to Directory  
 // @param Pointer to the file
 // @param entry - entry to write to 
-bool FsFat12_ConvertFileToDirectory(PFILE file, pDirectoryEntry entry);
+pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum);
 
 
 #endif

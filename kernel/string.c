@@ -10,6 +10,7 @@ int strcmp(const char* str1, const char* str2)
 		++str1;
 		++str2;
 	}
+
 	if (result < 0)
 	{
 		result = -1;
@@ -33,6 +34,7 @@ int strcasecmp(const char* str1, const char* str2)
 		++str1;
 		++str2;
 	}
+	
 	if (result < 0)
 	{
 		result = -1;
