@@ -133,7 +133,7 @@ int atoi(const char* intString)
 // Copy string source to destination
 char * strcpy(char * destination, const char * source)
 {
-    char * destinationTemp = destination;
+    char* destinationTemp = destination;
     while (*destination++ = *source++);
     return destinationTemp;
 }

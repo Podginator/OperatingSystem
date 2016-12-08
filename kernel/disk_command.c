@@ -19,8 +19,8 @@ static DirectoryEntry _cwd[16];
 static inline char* PrepareFilePath(char* filepath); 
 static inline void GetDateCreated(uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year);
 static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds);
-static inline void PrintDirectoryEntry(pDirectoryEntry entry, bool isLFN);
-static void SetPresentWorkingDirectory(char* pwd);
+static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLFN);
+static void SetPresentWorkingDirectory(const char* pwd);
 
 // Extract the date created from the entry->DateCreated property. 
 // @param dateCreated the Date Created 
@@ -131,8 +131,13 @@ static char* PrepareFilePath(char* filepath)
         writeTo++;
         temp++;
     } 
-
-    // Null Terminate at the end.  
+  
+    // Remove the trailing \ from  the path if it's there
+    if (*(writeTo - 1) == '\\')
+    {
+        writeTo--;
+    }
+    // Null Terminate at the end.
     *writeTo = 0;
 
     // We could have overshot root. 
@@ -148,7 +153,7 @@ static char* PrepareFilePath(char* filepath)
 // Print the DirectoryEntry (Prints like Windows: CMD dir)
 // @param entry the directory entry 
 // @param isLongFileName - We want to handle it if we've passed in a long file name
-static inline void PrintDirectoryEntry(pDirectoryEntry entry, bool isLongFileName)
+static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLongFileName)
 {
     // Do Writing. (like CMD)
     size_t counter = 0;
@@ -214,7 +219,7 @@ void DiskCommand_Init()
 
 // Set the Present Working Directory.
 // @param pwd what to set the Present Working Directory as
-static void SetPresentWorkingDirectory(char* pwd)
+static void SetPresentWorkingDirectory(const char* pwd)
 {
     // Copy the pwd to the _pwd 
     strcpy(_pwd, pwd);
