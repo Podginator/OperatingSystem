@@ -7,7 +7,9 @@
 #include <string.h>
 
 // The Filepath we're using (More?)
-static char _pwd[256];
+static char _pwd[1024];
+// The Autocomplete Buffer (2048 because each file can be 255)
+char  _autoComplete[2048];
 // 16 Directory Entries per current directory.
 static DirectoryEntry _cwd[16]; 
 
@@ -368,8 +370,7 @@ void DiskCommand_AutoComplete(char* path, int* num)
 
 
     bool nextLFN = false;
-    char found[1024]; 
-    char* tempFound = found;
+    char* tempFound = _autoComplete;
     // If the first byte is 0 there's nothing remaining. 
     if (entry[0].Filename[0] != 0x00) 
     {
@@ -402,14 +403,14 @@ void DiskCommand_AutoComplete(char* path, int* num)
         // If we've only found one, autocomplete
         if (*num == 1)
         {
-            int delimiterLoc = strchr(found, ' ');
-            memcpy(compare, found, delimiterLoc);
+            int delimiterLoc = strchr(_autoComplete, ' ');
+            memcpy(compare, _autoComplete, delimiterLoc);
         }
         else if (*num > 0)
         {
             // Otherwise just print them out.`
             ConsoleWriteCharacter('\n');
-            ConsoleWriteString(found);
+            ConsoleWriteString(_autoComplete);
         }
     }
 } 
