@@ -229,9 +229,11 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
     FILE failed;
     failed.Flags = FS_INVALID;
 
+    // Declare nextFilename outside the scope of the while loop as we don't want to create and lose 
+    char nextFilename[256];
+
     while (!done)
     {
-        char nextFilename[256];
         bool isLFN = false;
         ExtractNextEntry(&temp, nextFilename);
 

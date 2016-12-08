@@ -7,7 +7,7 @@
 #include <disk_command.h>
 
 char _prompt[25];
-char _buffer[256];
+char _buffer[2048];
 bool isRunning = true;
 int bufferCounter = 0; 
 

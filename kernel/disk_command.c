@@ -7,9 +7,11 @@
 #include <string.h>
 
 // The Filepath we're using (More?)
-static char _pwd[1024];
-// The Autocomplete Buffer (2048 because each file can be 255)
-char  _autoComplete[2048];
+static char _pwd[2048];
+// A Temporary Buffer used for Autocomplete and ChangeDirectory.
+static char  _tempBuffer[2048];
+
+
 // 16 Directory Entries per current directory.
 static DirectoryEntry _cwd[16]; 
 
@@ -229,8 +231,10 @@ char* DiskCommand_GetPresentWorkingDirectory()
 // @param dir the directory to change to. 
 void DiskCommand_ChangeDirectory(char* dir)
 {
-    char tempDir[256];
-    FILE directory = GetFileFromPath(dir, tempDir);
+    // This is here as it's used only in this function. 
+    // The functions proceeding this do not require much stack space (We will not blow the stack)
+    // We merely memcpy it to the _pwd if we have returned the correct directory.
+    FILE directory = GetFileFromPath(dir, _tempBuffer);
 
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_DIRECTORY)
@@ -240,12 +244,12 @@ void DiskCommand_ChangeDirectory(char* dir)
         memcpy(_cwd, FsFat12_GetDirectoryFromSector(directory.CurrentCluster), 512);
 
         // Copy the pwd.
-        SetPresentWorkingDirectory(PrepareFilePath(tempDir));
+        SetPresentWorkingDirectory(PrepareFilePath(_tempBuffer));
     }
     else
     {
         ConsoleWriteString("\nNo Directory Found at ");
-        ConsoleWriteString(PrepareFilePath(tempDir));
+        ConsoleWriteString(PrepareFilePath(_tempBuffer));
     }
 }
 
@@ -370,7 +374,7 @@ void DiskCommand_AutoComplete(char* path, int* num)
 
 
     bool nextLFN = false;
-    char* tempFound = _autoComplete;
+    char* tempFound = _tempBuffer;
     // If the first byte is 0 there's nothing remaining. 
     if (entry[0].Filename[0] != 0x00) 
     {
@@ -403,14 +407,14 @@ void DiskCommand_AutoComplete(char* path, int* num)
         // If we've only found one, autocomplete
         if (*num == 1)
         {
-            int delimiterLoc = strchr(_autoComplete, ' ');
-            memcpy(compare, _autoComplete, delimiterLoc);
+            int delimiterLoc = strchr(_tempBuffer, ' ');
+            memcpy(compare, _tempBuffer, delimiterLoc);
         }
         else if (*num > 0)
         {
             // Otherwise just print them out.`
             ConsoleWriteCharacter('\n');
-            ConsoleWriteString(_autoComplete);
+            ConsoleWriteString(_tempBuffer);
         }
     }
 } 
