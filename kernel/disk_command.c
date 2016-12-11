@@ -113,7 +113,7 @@ static char* PrepareFilePath(char* filepath)
                     while (*(--writeTo) != '\\');
                     temp += 3;
                 }
-                else
+                else if (*(temp + 2) == '\\' || !*(temp + 2))
                 {
                     // Otherwise skip over the . 
                     temp += 2;
