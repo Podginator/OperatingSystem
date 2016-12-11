@@ -22,12 +22,12 @@ $(IMAGE).img : bootloader kernel
 #   Copy our second stage of the boot to the floppy image
 	dd status=noxfer conv=notrunc seek=1 if=boot/boot2.bin of=$(IMAGE).img
 #	Mount floppy image file as Z:
-	imdisk -a -t file -f $(IMAGE).img -o rem -m z:
+	imdisk -a -t file -f $(IMAGE).img -o rem -m y:
 	cp kernel/kernel.sys .
 #	Now copy files to z: (we do it this way to avoid problems with cygwin and drive specifiers)
-	cmd /c "copy kernel.sys z:KERNEL.SYS"
+	cmd /c "copy kernel.sys y:KERNEL.SYS"
 #	Unmount the floppy disk image
-	imdisk -D -m z:
+	imdisk -D -m y:
 #	Copy the Test files.
 	cmd /c "copytestfiles.bat"
 # 	Launch Bocks #TO DO REMOVE.

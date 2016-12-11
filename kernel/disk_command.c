@@ -101,19 +101,15 @@ static char* PrepareFilePath(char* filepath)
 
     while (*temp != 0)
     {
-        // TODO: Fix. 
-        // Though: This WILL short circuit, which means we don't have to evaluate everything
-        // Hence: \\ is more likely than null, and I'd argue that .. is more likely than .
-        // Realistically .. is only likely to be used at the START of a cd command 
-        // (who is really typing Hello/../Hello/../Hello.) but I often do cd .. 
-        if (*temp == '\\' && (*(temp + 3) == '\\' || *(temp+2) == '\\' ||
-                              *(temp + 3) == 0  || *(temp + 2) == 0))
+        // If there's 2, 1, or -1 characters between \ and the end character
+        // then we're either \.\ \..\ or \. \.. (-1 indicates an \0)
+        if (*temp == '\\' && (strchr((temp + 1), '\\') <= 2))
         {
             if (*(temp + 1) == '.') 
             {
                 if (*(temp + 2) == '.') 
                 {
-                    // Loop Back 
+                    // Loop Back to before we set 
                     while (*(--writeTo) != '\\');
                     temp += 3;
                 }
