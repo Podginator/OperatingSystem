@@ -109,13 +109,13 @@ static char* PrepareFilePath(char* filepath)
             {
                 if (*(temp + 2) == '.') 
                 {
-                    // Loop Back to before we set 
+                    // Loop Back to the previous \. 
                     while (*(--writeTo) != '\\');
                     temp += 3;
                 }
                 else
                 {
-                    // Otherwise write over it. 
+                    // Otherwise skip over the . 
                     temp += 2;
                 }
 
