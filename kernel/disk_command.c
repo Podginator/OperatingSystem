@@ -107,19 +107,20 @@ static char* PrepareFilePath(char* filepath)
         {
             if (*(temp + 1) == '.') 
             {
-                if (*(temp + 2) == '.') 
+                char secondChar = *(temp + 2);
+                if (secondChar == '.') 
                 {
                     // Loop Back to the previous \. 
                     while (*(--writeTo) != '\\');
                     temp += 3;
+                    continue;
                 }
-                else if (*(temp + 2) == '\\' || !*(temp + 2))
+                else if (secondChar == '\\' || !secondChar)
                 {
                     // Otherwise skip over the . 
                     temp += 2;
+                    continue;
                 }
-
-                continue;
             }
         }
 
