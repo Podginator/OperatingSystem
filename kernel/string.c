@@ -46,6 +46,35 @@ int strcasecmp(const char* str1, const char* str2)
 	return result;
 }
 
+
+// Compare two strings without case to n spaces
+// @param str1 the first string
+// @param str2 the second string
+// @return 0 if equal, 1 if greater, -1 if less.
+int strncasecmp(const char* str1, const char* str2, size_t size) {
+	
+	int result = 0;
+	int cnt = 1;	
+	while (!(result = CharToUpper(*(unsigned char*)str1) - CharToUpper(*(unsigned char*)str2)) && *str2 && (cnt < size))
+	{
+		++str1;
+		++str2;
+		++cnt;
+	}
+	
+	if (result < 0)
+	{
+		result = -1;
+	}
+	
+	if (result > 0)
+	{
+		result = 1;
+	}
+	
+	return result;
+}
+
 // Takes a character and converts it to the upper case
 // @param character the character to convert to upper
 // @return Capped version, if lowercase letter otherwise the same

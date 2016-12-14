@@ -201,6 +201,9 @@ static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLongF
     {
         ConsoleWriteInt(entry->FileSize, 10);
     } 
+
+    ConsoleWriteString("  ");    
+    ConsoleWriteInt(entry->FirstCluster, 10);            
 }
 
 // Initialize
@@ -236,7 +239,7 @@ void DiskCommand_ChangeDirectory(char* dir)
     // The functions proceeding this do not require much stack space (We will not blow the stack)
     // We merely memcpy it to the _pwd if we have returned the correct directory.
     FILE directory = GetFileFromPath(dir, _tempBuffer);
-    
+
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_DIRECTORY)
     {

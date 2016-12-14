@@ -161,11 +161,18 @@ void FsFat12_Initialise()
     // Data is RootSize + Offset to the root.
     offsetData = offsetRoot + rootSize;
 
+
     size_t sizePerFat = startSector->Bpb.SectorsPerFat;
     for (size_t i = 0; i < sizePerFat; i++)
     {
         memcpy(FAT_Table + (i * BYTES_PER_SECTOR), FloppyDriveReadSector(offsetFat + i), 512);
     }
+
+
+    // TEST here. 
+
+
+    
 }
 
 // Open a file
@@ -302,8 +309,8 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
 // @param buffer - buffer to read to)
 // @param length - length to read to. 
 // @return The Length of what we read.
-// @pre : to be considered: This doesn't expect to be called multiple times, if the same buffer 
-//        the programmer should adjust the buffer themselves.
+// @pre/post : to be considered: This doesn't expect to be called multiple times,
+//        if the same buffer the programmer should memcpy the buffer themselves if permanence is needed.
 unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length)
 {
     int read = 0;

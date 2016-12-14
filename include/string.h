@@ -9,6 +9,7 @@
 int strcmp(const char* str1, const char* str2); 
 int strncmp(const char* str1, const char* str2, size_t size);
 int strcasecmp(const char* str1, const char* str2);
+int strncasecmp(const char* str1, const char* str2, size_t size);
 char* toLower(char* string);
 char* toUpper(char* string);
 char * strcpy(char * destination, const char * source);

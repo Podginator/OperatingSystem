@@ -159,20 +159,20 @@ void Command_Disk(size_t sector, char type)
 // Process the command
 void Command_ProcessCommand(char* cmd)
 {
-    if (strcmp("exit", cmd) == 0) 
+    if (strcasecmp("exit", cmd) == 0) 
     {
         Command_Exit();
     }
-    else if (strcmp("cls", cmd) == 0)
+    else if (strcasecmp("cls", cmd) == 0)
     {
         Command_ClearScreen();
     }
-    else if (strncmp("prompt ", cmd, 7) == 0)
+    else if (strncasecmp("prompt ", cmd, 7) == 0)
     {
         char* temp = cmd + 7;
         Command_Prompt(temp);
     }
-    else if (strncmp("readdisk ", cmd, 9) == 0) 
+    else if (strncasecmp("readdisk ", cmd, 9) == 0) 
     {
         char* temp = cmd + 9;
 
@@ -194,21 +194,21 @@ void Command_ProcessCommand(char* cmd)
         // Call our function
         Command_Disk(num, limiter);
     }
-    else if (strncmp("cd ", cmd, 3) == 0) 
+    else if (strncasecmp("cd ", cmd, 3) == 0) 
     {
         DiskCommand_ChangeDirectory(cmd + 3);
     }
-    else if (strcmp ("pwd", cmd) == 0) 
+    else if (strcasecmp("pwd", cmd) == 0) 
     {
         ConsoleWriteCharacter('\n');
         ConsoleWriteString(DiskCommand_GetPresentWorkingDirectory());
     }
-    else if (strcmp ("ls", cmd) == 0 || strcmp ("dir", cmd) == 0) 
+    else if (strcasecmp("ls", cmd) == 0 || strncasecmp ("dir", cmd) == 0) 
     {
         ConsoleWriteCharacter('\n');
         DiskCommand_ListFiles();
     }
-    else if (strncmp("read ", cmd, 5) == 0)
+    else if (strncasecmp("read ", cmd, 5) == 0)
     {
         DiskCommand_ReadFile(cmd + 5);
     }
@@ -216,4 +216,4 @@ void Command_ProcessCommand(char* cmd)
     {
         ConsoleWriteString("\nCommand Not Recognized"); 
     }
-}
+}   
