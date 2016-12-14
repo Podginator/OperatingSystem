@@ -6,11 +6,10 @@
 #include <console.h>
 #include <string.h>
 
-// The Filepath we're using (More?)
+// The Filepath we're using
 static char _pwd[2048];
 // A Temporary Buffer used for Autocomplete and ChangeDirectory.
 static char  _tempBuffer[2048];
-
 
 // 16 Directory Entries per current directory.
 static DirectoryEntry _cwd[16]; 
@@ -237,7 +236,7 @@ void DiskCommand_ChangeDirectory(char* dir)
     // The functions proceeding this do not require much stack space (We will not blow the stack)
     // We merely memcpy it to the _pwd if we have returned the correct directory.
     FILE directory = GetFileFromPath(dir, _tempBuffer);
-
+    
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_DIRECTORY)
     {

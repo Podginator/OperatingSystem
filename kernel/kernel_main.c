@@ -95,10 +95,76 @@ void Initialise()
 	FsFat12_Initialise();
 }
 
+
+// Test the Close Function 
+void testFileClose()
+{
+	FILE file;
+	file.Eof = 0; 
+	FsFat12_Close(&file);
+	if (file.Eof) 
+	{
+		ConsoleWriteString("File Successfully closed");
+	}
+	FsFat12_Close(NULL);
+}
+
+// Test reading a file that is NULL, or Invalid 
+void testFileReadNull()
+{
+	char testBuffer[128];
+	// This should return 0. 
+	ConsoleWriteString("Testing with NULL : ");
+	ConsoleWriteInt(FsFat12_Read(NULL, testBuffer, 128), 10);
+
+	// Test a file with CurrentCluster set to 0.
+	FILE file;
+	file.Eof = 0; 
+	file.FileLength = 100;
+	file.CurrentCluster = 0;
+	ConsoleWriteString("\nTesting with file with INVALID starting Cluster : ");
+	// Should be 0 again.
+	ConsoleWriteInt(FsFat12_Read(&file, testBuffer, 128), 10);
+	ConsoleWriteString("\n");
+}
+
+void testOpen() 
+{
+	FILE file  = FsFat12_Open("\\Testing");
+	if (file.Flags == FS_DIRECTORY)
+	{
+		ConsoleWriteString("\\Testing\\Testing Open Returned FS_DIRECTORY\n");
+	}
+
+	file = FsFat12_Open("\\Testing\\TestTwoLongFileName.txt");
+	if (file.Flags == FS_FILE)
+	{
+		ConsoleWriteString("\\Testing\\TestTwoLongFileName.txt Open Returned FS_FILE\n");
+	}
+
+	// Test Opening NULL 
+	file = FsFat12_Open(NULL); 
+	if (file.Flags == FS_INVALID)
+	{
+		ConsoleWriteString("Null Open Returned FS_INVALID\n");
+	}
+
+	file = FsFat12_Open("");
+	if (file.Flags == FS_INVALID)
+	{
+		ConsoleWriteString("empty string Open Returned FS_INVALID\n");
+	}
+}
+
 void main(BootInfo * bootInfo) 
 {
 	_bootInfo = bootInfo;
 	Initialise();
+
+	//testFileClose();
+	//testFileReadNull();
+	//testOpen();
+
 	Run();
 	while (1);
 }

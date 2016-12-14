@@ -150,7 +150,7 @@ pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum)
 void FsFat12_Initialise()
 {
     // Retrieve the Bios Parameter Block
-    BootSector* startSector = (BootSector*) FloppyDriveReadSector(0);
+    pBootSector startSector = (pBootSector) FloppyDriveReadSector(0);
 
     // Offset to the first FAT
     offsetFat = startSector->Bpb.ReservedSectors;
@@ -161,7 +161,8 @@ void FsFat12_Initialise()
     // Data is RootSize + Offset to the root.
     offsetData = offsetRoot + rootSize;
 
-    for (size_t i = 0; i < startSector->Bpb.SectorsPerFat; i++)
+    size_t sizePerFat = startSector->Bpb.SectorsPerFat;
+    for (size_t i = 0; i < sizePerFat; i++)
     {
         memcpy(FAT_Table + (i * BYTES_PER_SECTOR), FloppyDriveReadSector(offsetFat + i), 512);
     }
@@ -318,8 +319,11 @@ unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length
         // What's our increment? Max we can pass is a sector. 
         int increment = length > BYTES_PER_SECTOR ? BYTES_PER_SECTOR : length;
 
+        // We should check CurrentCluster is correct and the LenRemaining is greater than 0
+        // We don't want to evaluate this EVERYTIME, though;
+        bool ok = (file->CurrentCluster > 2) && (lenRemaining > 0);
         unsigned char* temp = buffer; 
-        while (lenRemaining > 0)
+        while (ok)
         {  
             // Todo make better.
             // Basically len = min(512, min(bytes_per_sector - remainder, length))
@@ -361,6 +365,8 @@ unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length
                     break;
                 }
             }
+
+            ok = lenRemaining > 0;
         }
 
         if (file->Position == file->FileLength)
