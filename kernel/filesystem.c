@@ -98,12 +98,12 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
     }
     else
     {
-        //
+
         bool ok = true;
         entry--;
         while (entry->Attrib == 0x0f && ok)
         {
-            // There are 12 UTF-16 Characters in a LFN entry. (Is this right?)
+            // There are 13 UTF-16 Characters in a LFN entry.
             uint16_t* utfs = ((pLongFileNameEntry) entry)->Filename_One;
 
             for (size_t i = 0; i < 13 && (ok = *utfs); i++)
