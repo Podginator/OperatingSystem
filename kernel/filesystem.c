@@ -297,7 +297,7 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                         // If we're not at the last path
                         if (tempEntry->Attrib & DIR_DIRECTORY) 
                         {
-                            // this should indicate how many entries we need to check on the subsequent read. 
+                            // this should indicate how many entries we need to check on the subsequent reads. 
                             // If we hit the root it'll be 224, otherwise it'll be 16.
                             entries = FsFat12_GetDirectoryFromSector(tempEntry->FirstCluster, _tempEntries);
                             tempEntry = (pDirectoryEntry) _tempEntries;
