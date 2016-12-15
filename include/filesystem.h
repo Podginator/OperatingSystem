@@ -4,16 +4,23 @@
 #define _FSYS_H
 
 #include <stdint.h>
+#include <size_t.h>
 
-//	File flags
+//	File flags (modified to be bit flags)
+#define FS_FILE       0b1
+#define FS_DIRECTORY  0b10
+#define FS_INVALID    0b100
+#define FS_TRAVERSED  0b1000
 
-#define FS_FILE       0
-#define FS_DIRECTORY  1
-#define FS_INVALID    2
-#define FS_TRAVERSED  4
-
-// File
-
+// Statics
+#define ENTRY_SIZE 32
+#define PHYSICAL_PADDING 32
+#define BYTES_PER_SECTOR 512
+#define SECTORS_PER_FAT_SECTOR 512
+#define ROOT_DIRECTORY_SECTOR_SIZE 14
+#define ENTRIES_PER_ROOT ROOT_DIRECTORY_SECTOR_SIZE * ENTRIES_PER_SECTOR
+#define ENTRIES_PER_SECTOR 16
+ 
 typedef struct _File 
 {
 	char        Name[256];
@@ -24,7 +31,6 @@ typedef struct _File
 	uint32_t    Position;
 	uint32_t    CurrentCluster;
 } FILE;
-
 typedef FILE * PFILE;
 
 typedef struct _DirectoryEntry 
@@ -44,12 +50,11 @@ typedef struct _DirectoryEntry
 	uint32_t  FileSize;
 
 } __attribute__((packed)) DirectoryEntry;
-
 typedef DirectoryEntry * pDirectoryEntry;
 
 
 // The long file name entry, packed slightly differently.
-// Uses utf-16(??)
+// Uses utf-16
 typedef struct _LongFileNameEntry
 {
 	uint8_t  SequenceNumber;
@@ -61,10 +66,11 @@ typedef struct _LongFileNameEntry
 	uint16_t Reserved_Two; 
 	uint16_t Filename_Three[2];
 } __attribute__((packed)) LongFileNameEntry;
-
-
 typedef LongFileNameEntry * pLongFileNameEntry;
 
+// We extern this _tempEntries as there are multiple places we require it. 
+// This saves us from having to declare two buffers to store things in.
+extern DirectoryEntry _tempEntries[ENTRIES_PER_ROOT];
 
 // Get Name From DirectoryEntry 
 // @param entry the directoy
@@ -96,8 +102,8 @@ void FsFat12_Close(PFILE file);
 
 // Converts Sector Number to Directory  
 // @param Pointer to the file
-// @param entry - entry to write to 
-pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum);
-
+// @param storebuffer entry to write to 
+// @return the Size of the directory entries.
+size_t FsFat12_GetDirectoryFromSector(uint32_t sectorNum, pDirectoryEntry storeBuffer);
 
 #endif

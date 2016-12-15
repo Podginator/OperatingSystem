@@ -6,14 +6,6 @@
 #include <_null.h>
 #include <string.h>
 
-// Statics
-#define ENTRY_SIZE 32
-#define PHYSICAL_PADDING 32
-#define BYTES_PER_SECTOR 512
-#define SECTORS_PER_FAT_SECTOR 512
-#define ROOT_DIRECTORY_SECTOR_SIZE 14
-#define ENTRIES_PER_SECTOR 16
-
 #define DIR_DIRECTORY  0x10
 
 // Store the offsets
@@ -24,6 +16,9 @@ uint32_t rootSize;
 
 // Store info into the FAT Table.
 uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
+
+// Tempory Entries to temporarily store when navigating.
+DirectoryEntry _tempEntries[ENTRIES_PER_ROOT];
 
 // ** Forward Declarations ** 
 static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer);
@@ -131,18 +126,35 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
 // Converts Sector Number to Directory  
 // @param sectorNum the sector number
 // @param entry - entry to write to 
-// @post : DMA Buffer used. Will be overriden on next call. 
-pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum)
+// @pre : StoreBuffer should be the correct size. Which is 512 Bytes if copying non Directories
+// @return Directory Entries Copied. 
+size_t FsFat12_GetDirectoryFromSector(uint32_t sectorNum, pDirectoryEntry storeBuffer) 
 {
-    if (sectorNum > 2) 
+    if (sectorNum >= 2) 
     {
         // Copy entire directory structure
-        return (pDirectoryEntry) FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (sectorNum - 2));
+        memcpy(storeBuffer, FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (sectorNum - 2)), 512);
+
+        return ENTRIES_PER_SECTOR;
     } 
     else 
     {
-        // Copy the root directory.
-        return (pDirectoryEntry) FloppyDriveReadSector(offsetRoot);
+        // Copy the Entire Root Directory into here. 
+        for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
+        {
+            pDirectoryEntry tempDir = (pDirectoryEntry) FloppyDriveReadSector(offsetRoot + i);
+            memcpy(((char*) storeBuffer) + (i << 9), tempDir, BYTES_PER_SECTOR); 
+
+            // No More Directories found. Do not copy anymore after this 
+            // Copy this one to ensure any loops terminating on names terminate correctly.  
+            if (tempDir[0].Filename[0] == 0x00) 
+            {
+                break;
+            }
+
+        }
+
+        return ENTRIES_PER_ROOT;
     }
 }
 
@@ -165,14 +177,9 @@ void FsFat12_Initialise()
     size_t sizePerFat = startSector->Bpb.SectorsPerFat;
     for (size_t i = 0; i < sizePerFat; i++)
     {
-        memcpy(FAT_Table + (i * BYTES_PER_SECTOR), FloppyDriveReadSector(offsetFat + i), 512);
+        memcpy(FAT_Table + (i << 9), FloppyDriveReadSector(offsetFat + i), 512);
     }
 
-
-    // TEST here. 
-
-
-    
 }
 
 // Open a file
@@ -197,9 +204,8 @@ FILE FsFat12_Open(const char* filename)
     // Retrieve the initial Directory.
     for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
     {
-        char buffer[512];
-        memcpy(buffer, FloppyDriveReadSector(offsetRoot + i), 512); 
-        pDirectoryEntry directory = (pDirectoryEntry) buffer;
+        memcpy(_tempEntries, FloppyDriveReadSector(offsetRoot + i), BYTES_PER_SECTOR); 
+        pDirectoryEntry directory = (pDirectoryEntry) _tempEntries;
 
         if (directory->Filename[0] != 0x00) 
         {
@@ -233,13 +239,15 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
 {
     bool done = false;
     const char* temp = filePath;
-    pDirectoryEntry tempEntry = entrySector;
+
+    memcpy(_tempEntries, entrySector, 512);
+    pDirectoryEntry tempEntry = (pDirectoryEntry) _tempEntries;
     FILE failed;
     failed.Flags = FS_INVALID;
+    size_t entries = ENTRIES_PER_SECTOR; 
 
     // Declare nextFilename outside the scope of the while loop as we don't want to create and lose 
-    char nextFilename[256];
-
+    char nextFilename[255];
     while (!done)
     {
         bool isLFN = false;
@@ -247,7 +255,7 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
 
         // if we've reached the end of the path we're done. (IE: We've hit null in the path)
         done = !(*temp);
-        for (size_t j = 0; j < ENTRIES_PER_SECTOR; j++, tempEntry++)
+        for (size_t j = 0; j < entries; j++, tempEntry++)
         {
 
             // This directory entry is free.
@@ -289,7 +297,10 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
                         // If we're not at the last path
                         if (tempEntry->Attrib & DIR_DIRECTORY) 
                         {
-                            tempEntry = FsFat12_GetDirectoryFromSector(tempEntry->FirstCluster);
+                            // this should indicate how many entries we need to check on the subsequent read. 
+                            // If we hit the root it'll be 224, otherwise it'll be 16.
+                            entries = FsFat12_GetDirectoryFromSector(tempEntry->FirstCluster, _tempEntries);
+                            tempEntry = (pDirectoryEntry) _tempEntries;
                         }
                         //Break and repeat the outer loop.
                         break;
