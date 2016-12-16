@@ -226,39 +226,25 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
 // @return Always False, we want to navigate all the folders. 
 bool ListFileDelegate(pDirectoryEntry entry,  uintptr_t* ptrs)
 {
-    if (entry->Attrib != 0x0f && !(entry->Attrib & 0x02))
+    if (FsFat12_HandleName(entry, _longFileName))
     {
-        // If the previous entry was a LFN directory we've already got the full filename
-        // Otherwsie we need to retrieve it. 
-        if (!_delegateIsLFN)
-        {
-            FsFat12_GetNameFromDirectoryEntry(entry, _longFileName);
-        }
         PrintDirectoryEntry(entry, _longFileName);
         ConsoleWriteString("\n");
     }
-    FsFat12_GetNameFromDirectoryEntry(entry, _longFileName);
-
-    _delegateIsLFN = entry->Attrib == 0x0F;
     return false;
 }
 
 // AutoComplete Delegate
-bool AutoCompleteDelegate(pDirectoryEntry tempEntry, uintptr_t* ptrs)
+bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
 {
     char* compare = (char*) ptrs[0];
     size_t compareLen = *((size_t*) ptrs[2]);
     char** testBuffer = (char**) ptrs[1];
     int* num = (int*) ptrs[3];
 
-    if (tempEntry->Attrib != 0x0f)
+    if (FsFat12_HandleName(entry, *testBuffer))
     {
         // Get the Short File name if previous entries weren't a long filename directory.   
-        if (!_delegateIsLFN) 
-        {
-            FsFat12_GetNameFromDirectoryEntry(tempEntry, *testBuffer);
-        }
-        
         if (strncmp(*testBuffer, compare, compareLen) == 0)
         {
             size_t lenComplete = strlen(*testBuffer);
@@ -267,9 +253,6 @@ bool AutoCompleteDelegate(pDirectoryEntry tempEntry, uintptr_t* ptrs)
             *num = *num + 1;
         }
     }
-    FsFat12_GetNameFromDirectoryEntry(tempEntry, *testBuffer);
-
-    _delegateIsLFN = tempEntry->Attrib == 0x0F; 
     return false;
 }
 

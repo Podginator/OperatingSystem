@@ -37,7 +37,7 @@ typedef struct _DirectoryEntry
 	uint8_t   Filename[8];
 	uint8_t   Ext[3];
 	uint8_t   Attrib;
-	uint8_t   Reserved;
+	uint8_t   HasLFN;  			// Use a previously reserved byte to store whether we have a LFN 
 	uint8_t   TimeCreatedMs;
 	uint16_t  TimeCreated;
 	uint16_t  DateCreated;
@@ -96,6 +96,8 @@ extern char  _tempBuffer[2048];
 
 // Temporary storage for a _LFN, as we call this multiple times
 extern char _longFileName[256];
+
+bool FsFat12_HandleName(pDirectoryEntry entry, char* fname);
 
 // Get Name From DirectoryEntry 
 // @param entry the directoy

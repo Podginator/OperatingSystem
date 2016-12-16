@@ -106,6 +106,9 @@ bool IterateSector(pDirectoryEntry entry, DirectoryDelegate fileFn, uintptr_t* p
             // There are no remaining files in this directory.
             return true;
         }
+        
+        tempEntry->HasLFN = (uint8_t) _delegateIsLFN;
+        _delegateIsLFN = tempEntry->Attrib & 0x0F;
 
         if (fileFn(tempEntry, ptrs))
         {
@@ -169,26 +172,15 @@ static bool MatchDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
     res->Flags = FS_INVALID;
     pDirectoryEntry tempEntry = entry;
 
-    if (entry->Attrib != 0x0f && !(entry->Attrib & 0x02))
+    if (FsFat12_HandleName(entry, _longFileName))
     {
-        if (!_delegateIsLFN)
-        {
-            FsFat12_GetNameFromDirectoryEntry(entry, _longFileName);
-        }
-
         if (strcmp(_longFileName, nextFile) == 0) 
         {
             *res = ConvertToFile(entry, _longFileName);
             return true;
         }
     }
-    else
-    {
-        FsFat12_BuildLongFileName((pLongFileNameEntry) entry, _longFileName);
-    }
 
-
-    _delegateIsLFN = tempEntry->Attrib == 0x0F;
     return false;
 }
 
@@ -214,12 +206,38 @@ void FsFat12_Initialise()
     }
 }
 
-void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, const char* fname)
+// Handle the Name
+// @param the entry to handle the name for
+// @param the buffer to append to 
+// @param In/Out :True if the last entry checked was a Long File Name
+bool FsFat12_HandleName(pDirectoryEntry entry, char* fname)
 {
     char* temp = fname;
 
-    // Long File Name Handle 
-    if (entry->Attrib & 0x0F)
+    // do normal extraction, return true.
+    if (entry->Attrib != 0x0f && !(entry->HasLFN))
+    {
+        char* name = entry->Filename;
+        int counter = 0;
+        while(*name != ' ' && counter <= 8)
+        {
+            *temp++ = *name++;
+            counter++;
+        }
+
+        if (!(entry->Attrib & 0x10))
+        {
+            *temp++ = '.';
+            for (size_t i = 0; i < 3; i++)
+            {
+                *temp++ = entry->Ext[i];
+            }
+        }
+        *temp = 0;
+
+        return true;
+    } 
+    else if (entry->Attrib == 0x0f)
     {
         pLongFileNameEntry lfnEntry = (pLongFileNameEntry) entry;
         bool isLast = (lfnEntry->SequenceNumber >> 6) != 0;
@@ -249,68 +267,17 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, const char* fname)
             // nullterminate
             *(temp) = 0;
         }
-
+        return false;
     }
-    else
+    else if (entry->HasLFN)
     {
-        char* name = entry->Filename;
-        int counter = 0;
-        while(*name != ' ' && counter <= 8)
-        {
-            *temp++ = *name++;
-            counter++;
-        }
-
-        if (!(entry->Attrib & 0x10))
-        {
-            *temp++ = '.';
-            for (size_t i = 0; i < 3; i++)
-            {
-                *temp++ = entry->Ext[i];
-            }
-        }
-        *temp = 0;
-
+        // Stored it with the Previous LFN entries
+        return true;
     }
-  
+
+    return false;
 }
 
-// Get Name From DirectoryEntry 
-// @param entry the directoy
-// @param buffer OUT the buffer to write the name to 
-// @param isLFN is this Long File Name?
-void FsFat12_BuildLongFileName(pLongFileNameEntry entry, char* buffer)
-{
-    size_t i = 0;
-
-    bool isLast = (entry->SequenceNumber >> 6) != 0;
-    uint8_t sequenceNum =  entry->SequenceNumber & 0b00111111;
-
-    char* temp = buffer;
-    temp += ((sequenceNum - 1) * 13);
-
-    uint16_t* utfs = entry->Filename_One;
-    for (; i < 13 && *utfs; i++)
-    {
-        // Otherwise copy 
-        *temp++ = (char) *utfs++;
-        
-        if (i == 4) 
-        {
-            utfs = entry->Filename_Two;
-        }
-        else if (i == 10)
-        {
-            utfs = entry->Filename_Three;
-        }
-    }
-
-    if (isLast)
-    {
-        // nullterminate
-        *(temp) = 0;
-    }
-}
 
 // Open a file 
 // This starts from the Root.
