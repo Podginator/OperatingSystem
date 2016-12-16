@@ -11,14 +11,8 @@ static char _pwd[2048];
 // A Temporary Buffer used for Autocomplete and ChangeDirectory.
 static char  _tempBuffer[2048];
 
-// The Current Working Directory for when we are NOT root. 
-// Reason we don't store root: We do not want to store 7kb worth of DirectoryEntry
-// In memory, instead it'll be better to just store non-root directories.
-static DirectoryEntry _cwd[ENTRIES_PER_SECTOR]; 
-
-// To keep track of if we are on the root directory. 
-// We need to handle when we're root in a few areas, but this is offset by the memory savings.
-static bool _isRoot = true;
+// 16 Directory Entries per current directory.
+static DirectoryEntry _cwd[16]; 
 
 // Forward declarations
 static inline char* PrepareFilePath(char* filepath); 
@@ -64,37 +58,36 @@ static void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes
 // @post if outPath is not null the outpath will be set the the pwd, this handles ../. 
 static inline FILE GetFileFromPath(char* dir, char* outPath) 
 {
-    FILE file; 
-    file.Flags = FS_INVALID;
+    FILE directory; 
+    directory.Flags = FS_INVALID;
 
     // If the first character is not a backspace we are not starting from root.
-    // Also if we _pwd is '\' we need to go from root. 
-    if (dir[0] != '\\' && !_isRoot) 
+    if (dir[0] != '\\') 
     {
-        file = FsFat12_OpenFrom(_cwd, dir);
+        directory = FsFat12_OpenFrom(_cwd, dir);
         
         if (outPath)
         {
-            strcat(outPath, _pwd, "\\");
+            strcpy(outPath, _pwd);
+            if (_pwd[1] != NULL)
+            { 
+                // Currently PWD is not '\'
+                strcat(outPath, _pwd, "\\");
+            }
+
             strcat(outPath, outPath, dir);
         }
     } 
     else 
     {
-        if (outPath && dir[0] == '\\') 
-        {
-            // If we already have a \ prepended 
+        if (outPath) {
+            // Otherwise let's just copy
             strcpy(outPath, dir);
         }
-        else if (outPath)
-        {
-            // Otherwise prepend and then attach.
-            strcat(outPath, "\\", dir);
-        }
-        file = FsFat12_Open(dir);
+        directory = FsFat12_Open(dir);
     }
 
-    return file;
+    return directory;
 }
 
 // Prepare the file path.
@@ -207,14 +200,19 @@ static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLongF
     if (!(entry->Attrib & 0x10))
     {
         ConsoleWriteInt(entry->FileSize, 10);
-    }           
+    } 
+
+    ConsoleWriteString("  ");    
+    ConsoleWriteInt(entry->FirstCluster, 10);            
 }
 
 // Initialize
 void DiskCommand_Init()
 {    
-    _isRoot = true;
-    // Initialize to the pwd being at root.
+    // Copy the root directory.
+    memcpy(_cwd, FsFat12_GetDirectoryFromSector(2), 512);
+ 
+    // Initialize to the pwd being empty.
     SetPresentWorkingDirectory("\\");
 }
 
@@ -245,13 +243,9 @@ void DiskCommand_ChangeDirectory(char* dir)
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_DIRECTORY)
     {
-        // Only store if we're not the root directory
-        _isRoot = directory.CurrentCluster <= 2;
-        if (!_isRoot) 
-        {
-            FsFat12_GetDirectoryFromSector(directory.CurrentCluster, _cwd);
-            
-        }
+        // Return current directory? 
+        // Is the memcpy a better use of our resources. Probably. Actually.
+        memcpy(_cwd, FsFat12_GetDirectoryFromSector(directory.CurrentCluster), 512);
 
         // Copy the pwd.
         SetPresentWorkingDirectory(PrepareFilePath(_tempBuffer));
@@ -264,49 +258,40 @@ void DiskCommand_ChangeDirectory(char* dir)
 }
 
 // Process the LS Command 
+// @param the filePath of the file to read files from. 
 void DiskCommand_ListFiles()
 {
+    bool done = false;
     bool nextLFN = false; 
-    pDirectoryEntry tempEntry;
-    size_t amt;
-
-    if (_isRoot)
+    pDirectoryEntry tempEntry = _cwd;
+    while (!done)
     {
-        FsFat12_GetDirectoryFromSector(0, _tempEntries);
-        tempEntry = _tempEntries;
-        amt = ENTRIES_PER_ROOT;
-    }
-    else
-    {
-        tempEntry = (pDirectoryEntry) _cwd;
-        amt = ENTRIES_PER_SECTOR;
-    }
-
-    // Read all entries in the current directory.
-    for (size_t j = 0; j < amt; j++, tempEntry++)
-    {
-        // This directory entry is Deleted.
-        if (tempEntry->Filename[0] == 0xE5) 
+        // Read all entries in the current directory.
+        for (size_t j = 0; j < 16; j++, tempEntry++)
         {
-            // But there might still be more.
-            continue;
-        }
+                // This directory entry is free.
+                if (tempEntry->Filename[0] == 0xE5) 
+                {
+                    // But there might still be more.
+                    continue;
+                }
 
-        // The first byte of the file name is empty. Meaning the rest of the directories 
-        // Are free in this entry
-        if (tempEntry->Filename[0] == 0x00) 
-        {
-            // There are no remaining files in this directory.
-            return;
-        }
+                // The first byte of the file name is empty. Meaning the rest of the directories 
+                // Are free in this entry
+                if (tempEntry->Filename[0] == 0x00) 
+                {
+                    // There are no remaining files in this directory.
+                    return;
+                }
 
-        if (tempEntry->Attrib != 0x0f && !(tempEntry->Attrib & 0x02))
-        {
-            PrintDirectoryEntry(tempEntry, nextLFN);
-            ConsoleWriteString("\n");
-        }
+                if (tempEntry->Attrib != 0x0f && !(tempEntry->Attrib & 0x02))
+                {
+                    PrintDirectoryEntry(tempEntry, nextLFN);
+                    ConsoleWriteString("\n");
+                }
 
-        nextLFN = tempEntry->Attrib == 0x0F;
+                nextLFN = tempEntry->Attrib == 0x0F;
+        }
     }
 }
 
@@ -361,61 +346,54 @@ void DiskCommand_AutoComplete(char* path, int* num)
     //  Get to the end of path but exclude the last one. 
     //  IE: path = /root/test/one/te We want to travere to /root/test/one/ 
     //  and get te to autocorrect.    
+    DirectoryEntry entry[16];
+
     char* temp = path;
-    int charLoc = 0;
+    int charLoc = -1;
     int loc = -1;
-    size_t amt = 0;
 
     while ((loc = strchr((temp + charLoc), '\\') + 1) > 0)
     {
         charLoc += loc;
     }
 
-    if (charLoc > 0) 
+    if (charLoc > -1) 
     {
-        // Ensure we also decrement charLoc as we want to get the char before. 
-        char character = *(temp + --charLoc); 
+        char character = *(temp + charLoc); 
         *(temp + charLoc) = 0;
         FILE file = GetFileFromPath(temp, NULL);
         *(temp + charLoc) = character;
 
         if (file.Flags == FS_DIRECTORY)
         {   
-            amt = FsFat12_GetDirectoryFromSector(file.CurrentCluster, _tempEntries);
+            memcpy(entry, (pDirectoryEntry)FsFat12_GetDirectoryFromSector(file.CurrentCluster), 512);
         } 
-    }
-    else if (!_isRoot)
-    {
-        amt = ENTRIES_PER_SECTOR;
-        memcpy(_tempEntries, _cwd, amt);
     }
     else
     {
-        amt = FsFat12_GetDirectoryFromSector(0, _tempEntries);
+        // Set Charloc to 0 (As we later use this to find what to compare too) 
+        charLoc = 0;
+        memcpy(entry, _cwd, 512);
     }
+
 
     bool nextLFN = false;
     char* tempFound = _tempBuffer;
-    // If the first byte is 0 there's nothing to do
-    if (_tempEntries[0].Filename[0] != 0x00) 
+    // If the first byte is 0 there's nothing remaining. 
+    if (entry[0].Filename[0] != 0x00) 
     {
-        pDirectoryEntry tempEntry = _tempEntries;
+        pDirectoryEntry tempEntry = entry;
         char* compare = temp + charLoc;
         size_t compareLen = strlen(compare);
 
         if (compareLen > 0) 
         {
-            for (size_t j = 0; j < amt; j++, tempEntry++)
+            for (size_t j = 0; j < 16; j++, tempEntry++)
             {
-                // Similarly, once we hit a 0 byte we can stop early.
-                if (tempEntry->Filename[0] == 0x00)
-                {
-                    break;
-                }
-
                 if (tempEntry->Attrib != 0x0f)
                 {
                     FsFat12_GetNameFromDirectoryEntry(tempEntry, tempFound, nextLFN);
+
                     if (strncmp(tempFound, compare, compareLen) == 0)
                     {
                         *num = *num + 1;                    

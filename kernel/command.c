@@ -105,7 +105,7 @@ void Run()
 // Command ClearScreen
 void Command_ClearScreen() 
 {
-    // Return the current.
+    // Return the current. 
     ConsoleClearScreen(ConsoleGetCurrentColour());
 }
 
@@ -203,7 +203,7 @@ void Command_ProcessCommand(char* cmd)
         ConsoleWriteCharacter('\n');
         ConsoleWriteString(DiskCommand_GetPresentWorkingDirectory());
     }
-    else if (strcasecmp("ls", cmd) == 0 || strcasecmp ("dir", cmd) == 0) 
+    else if (strcasecmp("ls", cmd) == 0 || strncasecmp ("dir", cmd) == 0) 
     {
         ConsoleWriteCharacter('\n');
         DiskCommand_ListFiles();

@@ -9,20 +9,24 @@
 #define DIR_DIRECTORY  0x10
 
 // Store the offsets
-uint32_t offsetFat;
-uint32_t offsetRoot;
-uint32_t offsetData;
-uint32_t rootSize; 
+static uint32_t offsetFat;
+static uint32_t offsetRoot;
+static uint32_t offsetData;
+static uint32_t rootSize; 
 
 // Store info into the FAT Table.
-uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
+static uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
 
-// Tempory Entries to temporarily store when navigating.
-DirectoryEntry _tempEntries[ENTRIES_PER_ROOT];
+// A tempory buffer for directories. 
+DirectoryEntry _tempEntries[ENTRIES_PER_SECTOR];
+
+// Temp Buffer for files.
+char _tempBuffer[2048];
 
 // ** Forward Declarations ** 
 static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer);
 static inline FILE ConvertToFile(pDirectoryEntry entry, char* name);
+static bool MatchDelegate(pDirectoryEntry entry, uint32_t* filename);
 
 
 // Convert a pointer to a directory entry to a FILE structure. 
@@ -40,9 +44,41 @@ static inline FILE ConvertToFile(pDirectoryEntry entry, char* name)
     return file;
 }
 
+// Navigate the Entries in a sector and return a FILE if one is found
+// @param entrySector The entry Sector 
+// @param nextFile The next file name
+// @return FILE the file we've retrieved.
+static bool MatchDelegate(pDirectoryEntry entry, uint32_t* fileName)
+{
+    pDirectoryEntry tempEntry = entry;
+    char* nextFile = (char*) fileName; 
+    static bool isLFN = false;
+
+    // This directory entry is free.
+    if (tempEntry->Filename[0] == 0xE5) 
+    {
+        return false;
+    }
+
+    char filename[255];
+    if (tempEntry->Attrib != 0x0F)
+    {
+        FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, isLFN);
+
+        // But since adding Long File Names seems redundant. Rather it work like BASH.
+        if (strcmp(filename, nextFile) == 0) 
+        {
+            return true;
+        }
+    }
+
+    isLFN = tempEntry->Attrib == 0x0F;
+    return false;
+}
+    
 // Extract the name and extn from a correctly formatted file path 
 // @param filePath the filepath to extract from (We Increment this each time)
-// @param fileNameBuffer the buffer to put the filename in 
+// @param fileNameBuffer  buffer to put the filename in 
 // @param extBuffer the buffer to put the ext in .`
 // @return parsed valid file path
 static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer)
@@ -126,35 +162,18 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
 // Converts Sector Number to Directory  
 // @param sectorNum the sector number
 // @param entry - entry to write to 
-// @pre : StoreBuffer should be the correct size. Which is 512 Bytes if copying non Directories
-// @return Directory Entries Copied. 
-size_t FsFat12_GetDirectoryFromSector(uint32_t sectorNum, pDirectoryEntry storeBuffer) 
+// @post : DMA Buffer used. Will be overriden on next call. 
+pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum)
 {
     if (sectorNum >= 2) 
     {
         // Copy entire directory structure
-        memcpy(storeBuffer, FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (sectorNum - 2)), 512);
-
-        return ENTRIES_PER_SECTOR;
+        return (pDirectoryEntry) FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (sectorNum - 2));
     } 
     else 
     {
-        // Copy the Entire Root Directory into here. 
-        for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
-        {
-            pDirectoryEntry tempDir = (pDirectoryEntry) FloppyDriveReadSector(offsetRoot + i);
-            memcpy(((char*) storeBuffer) + (i << 9), tempDir, BYTES_PER_SECTOR); 
-
-            // No More Directories found. Do not copy anymore after this 
-            // Copy this one to ensure any loops terminating on names terminate correctly.  
-            if (tempDir[0].Filename[0] == 0x00) 
-            {
-                break;
-            }
-
-        }
-
-        return ENTRIES_PER_ROOT;
+        // Copy the root directory.
+        return (pDirectoryEntry) FloppyDriveReadSector(offsetRoot);
     }
 }
 
@@ -173,51 +192,71 @@ void FsFat12_Initialise()
     // Data is RootSize + Offset to the root.
     offsetData = offsetRoot + rootSize;
 
-
     size_t sizePerFat = startSector->Bpb.SectorsPerFat;
     for (size_t i = 0; i < sizePerFat; i++)
     {
-        memcpy(FAT_Table + (i << 9), FloppyDriveReadSector(offsetFat + i), 512);
+        memcpy(FAT_Table + (i * BYTES_PER_SECTOR), FloppyDriveReadSector(offsetFat + i), 512);
     }
-
 }
 
-// Open a file
+// Open a file 
 // This starts from the Root.
 // @param filename - filename
 // @return the opened file, set to FS_INVALID if not found.
 FILE FsFat12_Open(const char* filename)
 {
+    // FILE res;
+    // res.Flags = FS_INVALID;
+
+    // // Return Root when we can
+    // if (strcmp(filename, "\\") == 0)
+    // {
+    //     res.CurrentCluster = res.Position = res.Eof = 0;
+    //     res.Flags = FS_DIRECTORY;
+    //     strcpy(res.Name, "\\");
+    //     return res;
+    // } 
+
+    // char nextFile[255];
+    // ExtractNextEntry(&filename, nextFile);
+    // FsFat12_IterateFolder()
+
+
     FILE res; 
     res.Flags = FS_INVALID; 
-    int i = 0;
 
-    // Handle the case where we're just retrieving the root directory
     if (strcmp(filename, "\\") == 0)
     {
         res.Flags = FS_DIRECTORY;
-        res.CurrentCluster = 0;
+        res.CurrentCluster = res.Position = res.Eof = 0;
         strcpy(res.Name, "\\");
         return res;
-    }
+    } 
 
-    // Retrieve the initial Directory.
+    char nextFile[255];
+    ExtractNextEntry(&filename, nextFile);
     for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
     {
         memcpy(_tempEntries, FloppyDriveReadSector(offsetRoot + i), BYTES_PER_SECTOR); 
         pDirectoryEntry directory = (pDirectoryEntry) _tempEntries;
 
-        if (directory->Filename[0] != 0x00) 
+        if (directory[0].Filename[0] != 0x00) 
         {
             // Traverse the directory, hopefully finding more..
-            res = FsFat12_OpenFrom(directory, filename);
+            res = MatchDelegate(directory, (uint32_t*)nextFile);
             // We've either not traversed the directory at all 
             // or we have but have still not found a file. 
-            if (!(res.Flags & FS_INVALID) || (res.Flags & FS_TRAVERSED))
+            if (!(res.Flags & FS_INVALID) || !(res.Flags & FS_FULLY_TRAVERSED))
             {   
-                // In either case we either return a found file
-                // Or nothing. This helps us terminate the loops early.
-                return res;
+                // Then continue to try and find from a subdirectory
+                if (*filename) 
+                {
+                    return FsFat12_OpenFrom(res, filename);
+                }
+                else
+                {
+                    return res;
+                }
             }
         } 
         else 
@@ -231,36 +270,27 @@ FILE FsFat12_Open(const char* filename)
     return res;
 }
 
-// Traverse the directory upwards to the filepath we pass in
-// @param entry - the initial entry we wish to traverse from (usually from the root)
-// @param filePath - the file path we wish to reach
-// @return The FILE we have found, flag set to INVALID if file not found.
-FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath) 
+
+
+// Iterate a folder applying a function. 
+// If the FileFunction returns true quite iterating. 
+// @param the directory we wish to iterate. 
+// @param fileFN the file function 
+// @param passIn Variable to pass to the file function
+void FsFat12_IterateFolder(FILE dir, DirectoryDelegate fileFn, uint32_t* ptrs)
 {
-    bool done = false;
-    const char* temp = filePath;
-
-    memcpy(_tempEntries, entrySector, 512);
-    pDirectoryEntry tempEntry = (pDirectoryEntry) _tempEntries;
-    FILE failed;
-    failed.Flags = FS_INVALID;
-    size_t entries = ENTRIES_PER_SECTOR; 
-
-    // Declare nextFilename outside the scope of the while loop as we don't want to create and lose 
-    char nextFilename[255];
-    while (!done)
+    do
     {
-        bool isLFN = false;
-        ExtractNextEntry(&temp, nextFilename);
+        FsFat12_Read(&dir, (char * )_tempEntries, BYTES_PER_SECTOR);
+        pDirectoryEntry tempEntry = _tempEntries;
 
-        // if we've reached the end of the path we're done. (IE: We've hit null in the path)
-        done = !(*temp);
-        for (size_t j = 0; j < entries; j++, tempEntry++)
+        for (size_t i = 0; i < ENTRIES_PER_SECTOR; i++, tempEntry++)
         {
 
             // This directory entry is free.
             if (tempEntry->Filename[0] == 0xE5) 
             {
+                // But there might still be more.
                 continue;
             }
 
@@ -269,50 +299,99 @@ FILE FsFat12_OpenFrom(pDirectoryEntry entrySector, const char* filePath)
             if (tempEntry->Filename[0] == 0x00) 
             {
                 // There are no remaining files in this directory.
-                return failed;
+                return;
             }
- 
 
-            if (tempEntry->Attrib != 0x0F)
+            if (fileFn(tempEntry, ptrs))
             {
-  
-                char filename[256];
-                FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, isLFN);
-
-                // TODO: Case Insensitive Or NOT? have a strcasecmp
-                // But since adding Long File Names seems redundant. Rather it work like BASH.
-                if (strcmp(filename, nextFilename) == 0) 
-                {
-                    // We have traversed the file slighty.
-                    // This indicates we have traversed the fs slightly
-                    // If we failed now we know that the file doesn't exist. 
-                    failed.Flags |= FS_TRAVERSED;
-                    
-                    if (done)
-                    {
-                        return ConvertToFile(tempEntry, filename);
-                    }                    
-                    else 
-                    {
-                        // If we're not at the last path
-                        if (tempEntry->Attrib & DIR_DIRECTORY) 
-                        {
-                            // this should indicate how many entries we need to check on the subsequent reads. 
-                            // If we hit the root it'll be 224, otherwise it'll be 16.
-                            entries = FsFat12_GetDirectoryFromSector(tempEntry->FirstCluster, _tempEntries);
-                            tempEntry = (pDirectoryEntry) _tempEntries;
-                        }
-                        //Break and repeat the outer loop.
-                        break;
-                    }
-                }
+                return; 
             }
-
-            isLFN = tempEntry->Attrib == 0x0F;
         }
     }
+    while (!dir.Eof);
+}
 
-    return failed;
+// Traverse the directory upwards to the filepath we pass in
+// @param entry - the initial entry we wish to traverse from (usually from the root)
+// @param filePath - the file path we wish to reach
+// @return The FILE we have found, flag set to INVALID if file not found.
+FILE FsFat12_OpenFrom(FILE dir, const char* filePath) 
+{
+    FILE fail;
+    fail.Flags = FS_INVALID;
+
+    bool done = false;     
+    do 
+    {
+        char nextFile[255];
+        ExtractNextEntry(&filePath, nextFile);
+        done = !(*temp);
+
+        FILE res = FsFat12_IterateFolder(dir, MatchDelegate, (uint32_t*)nextFile);
+        
+        if (done)
+        {
+            return res; 
+        }
+        else if (!done && res.Flags & (FS_INVALID || FS_FULLY_TRAVERSED || FS_FILE))
+        {
+            return fail;
+        }
+
+        dir = res;
+    }
+    while (!done)
+
+    // bool done = false;
+    // const char* temp = filePath;
+    // FILE fail;
+    // fail.Flags = FS_INVALID;
+
+    // // We've either passed in a null pointer or a FILE.
+    // if (dir.Flags & FS_FILE)
+    // {
+    //     return fail;
+    // }
+
+    // FILE res; 
+    // while (!done)
+    // {
+    //     bool isLFN = false;
+    //     char nextEntry[255];
+    //     ExtractNextEntry(&temp, nextEntry);
+        
+    //     // Navigate Folder Structure. 
+    //     do
+    //     {
+    //         FsFat12_Read(&dir, (char* ) _tempEntries, BYTES_PER_SECTOR);
+    //         pDirectoryEntry tempEntry = _tempEntries;
+    //         res = RetrieveFileFromDirectorySector(_tempEntries, nextEntry);
+
+    //         if (res.Flags & FS_FULLY_TRAVERSED || (!done && res.Flags == FS_FILE))
+    //         {
+    //             return fail;
+    //         }
+    //         else if (!(res.Flags & FS_INVALID))
+    //         {
+    //             if (done)
+    //             {
+    //                 return res;
+    //             }
+    //             else if (res.Flags & FS_DIRECTORY)
+    //             {
+    //                 dir = res;
+    //                 break;
+    //             }
+                
+    //             return fail;
+    //         }
+    //     }
+    //     while (res.Flags & FS_INVALID && !res.Eof);
+    //     // if we've reached the end of the path we're done. (IE: We've hit null in the path)
+    //     done = !(*temp);
+    // }
+
+    // return res;
 }
 
 // Read from a file system
@@ -330,8 +409,14 @@ unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length
         // Get the Max, the file Length or the length of the file. We should not read 
         // Over the length of the file.     
         // If the pointer exists continue
-        int totalFileRemaining = (file->FileLength - file->Position);
-        int lenRemaining = length > totalFileRemaining  ? totalFileRemaining : length;
+        int lenRemaining = length;
+        // If we're a file we should consider the fact that we have a FileLength to consder.
+        if (file->Flags == FS_FILE)
+        {
+            int totalFileRemaining = (file->FileLength - file->Position);
+            lenRemaining = length > totalFileRemaining  ? totalFileRemaining : length;
+        }
+        
         int remainder = file->Position % BYTES_PER_SECTOR;
 
         // What's our increment? Max we can pass is a sector. 
@@ -360,10 +445,9 @@ unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length
             file->Position += len;
             remainder = file->Position % BYTES_PER_SECTOR;
             
-            // n == even (low four bits in location 1+(3*n)/2 with 8 bits in location (3*n)/2
-            // n == odd, high four bits in location (3*n)/2 with 8 bits in location 1+(3*n)/2 
-
-            //(3 * n) / 2 is equivalent to  1.5 * n (We can use a bitshift, which should be more efficient.)
+            //  n == even (low four bits in location 1+(3*n)/2 with 8 bits in location (3*n)/2
+            //  n == odd, high four bits in location (3*n)/2 with 8 bits in location 1+(3*n)/2 
+            // (3 * n) / 2 is equivalent to  1.5 * n (We can use a bitshift, which should be more efficient.)
             size_t baseInd = file->CurrentCluster + (file->CurrentCluster >> 1);
 
             // Set the cluster to be the next one in the FAT Map. 
