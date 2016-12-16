@@ -295,7 +295,7 @@ FILE FsFat12_Open(const char* filePath)
         {
             return res; 
         }
-        else if (!done && (res.Flags & (FS_INVALID | FS_FULLY_TRAVERSED | FS_FILE)))
+        else if (!done && (res.Flags & (FS_INVALID | FS_FILE)))
         {
             res.Flags = FS_INVALID;
             return res;
@@ -332,7 +332,7 @@ FILE FsFat12_OpenFrom(FILE dir, const char* filePath)
         {
             return res; 
         }
-        else if (!done && res.Flags & (FS_INVALID || FS_FULLY_TRAVERSED || FS_FILE))
+        else if (!done && res.Flags & (FS_INVALID | FS_FILE))
         {
             res.Flags = FS_INVALID;
             return res;

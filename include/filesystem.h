@@ -9,8 +9,6 @@
 #define FS_FILE       0b1
 #define FS_DIRECTORY  0b10
 #define FS_INVALID    0b100
-#define FS_TRAVERSED  0b1000
-#define FS_FULLY_TRAVERSED 0b10000
 
 
 // Statics
