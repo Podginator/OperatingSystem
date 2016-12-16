@@ -5,6 +5,7 @@
 int strcmp(const char* str1, const char* str2)
 {
 	int result = 0;
+
 	while (!(result = *(unsigned char*)str1 - *(unsigned char*)str2) && *str2)
 	{
 		++str1;
@@ -290,6 +291,20 @@ void * memset(void *destination, char val, size_t count)
 		
 	}
 	return destination;
+}
+
+int strcount(const char* haystack, char needle)
+{
+    int i = 0;
+	int found = -1;
+
+	while (found = strchr(haystack, needle) > -1)
+	{
+		haystack += found + 1; 
+		i++;
+	}
+
+    return i;
 }
 
 // Returns a padded string in the destination buffer. 

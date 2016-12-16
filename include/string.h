@@ -25,6 +25,8 @@ unsigned short * memsetw(unsigned short * destination, unsigned short val, size_
 int atoi(const char* intString);
 int strchr(const char* haystack, char needle);
 char CharToUpper(char character);
+int strcount(const char* haystack, char needle);
+
 
 
 #endif

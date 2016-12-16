@@ -17,25 +17,17 @@ static uint32_t rootSize;
 // Store info into the FAT Table.
 static uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
 
+// A tempory buffer for directories. 
 DirectoryEntry _tempEntries[ENTRIES_PER_SECTOR];
 
 // Temp Buffer for files.
 char _tempBuffer[2048];
-bool _delegateIsLFN = false;
 
 // ** Forward Declarations ** 
 static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer);
 static inline FILE ConvertToFile(pDirectoryEntry entry, char* name);
+static bool MatchDelegate(pDirectoryEntry entry, uint32_t* filename);
 
-// Delegate Declarations.
-static inline void IterateSubDirectory(FILE file, DirectoryDelegate fileFn, uint32_t* ptrs);
-static inline void IterateRootFolder(DirectoryDelegate fileFn, uint32_t* ptrs);
-static inline bool IterateSector(pDirectoryEntry entry, DirectoryDelegate fileFn, uint32_t* ptrs);
-static inline bool MatchDelegate(pDirectoryEntry entry, uint32_t* filename);
-
-//
-//   STATIC DECLARATIONS
-//
 
 // Convert a pointer to a directory entry to a FILE structure. 
 // @param entry the entry to convert
@@ -52,6 +44,38 @@ static inline FILE ConvertToFile(pDirectoryEntry entry, char* name)
     return file;
 }
 
+// Navigate the Entries in a sector and return a FILE if one is found
+// @param entrySector The entry Sector 
+// @param nextFile The next file name
+// @return FILE the file we've retrieved.
+static bool MatchDelegate(pDirectoryEntry entry, uint32_t* fileName)
+{
+    pDirectoryEntry tempEntry = entry;
+    char* nextFile = (char*) fileName; 
+    static bool isLFN = false;
+
+    // This directory entry is free.
+    if (tempEntry->Filename[0] == 0xE5) 
+    {
+        return false;
+    }
+
+    char filename[255];
+    if (tempEntry->Attrib != 0x0F)
+    {
+        FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, isLFN);
+
+        // But since adding Long File Names seems redundant. Rather it work like BASH.
+        if (strcmp(filename, nextFile) == 0) 
+        {
+            return true;
+        }
+    }
+
+    isLFN = tempEntry->Attrib == 0x0F;
+    return false;
+}
+    
 // Extract the name and extn from a correctly formatted file path 
 // @param filePath the filepath to extract from (We Increment this each time)
 // @param fileNameBuffer  buffer to put the filename in 
@@ -75,133 +99,6 @@ static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer)
     // Nullterminate it.
     *(filenameBuffer + needle) = 0;
     *filePath += needle + 1;
-}
-
-//
-//    DELEGATE DECLARATION
-//
-
-// Iterate over a sector of Directory Entries 
-// @param entry the Sector to iterate over 
-// @param fileFn The File Function to apply. 
-// @param ptrs Pointers to required paramters for the delegate. (If I had more time I would use VarArgs)
-// @return False if we can continue, true otherwise.
-bool IterateSector(pDirectoryEntry entry, DirectoryDelegate fileFn, uintptr_t* ptrs)
-{
-    pDirectoryEntry tempEntry = entry;
-    _delegateIsLFN = false;
-    for (size_t i = 0; i < ENTRIES_PER_SECTOR; i++, tempEntry++)
-    {
-        // This directory entry is free.
-        if (tempEntry->Filename[0] == 0xE5) 
-        {
-            // But there might still be more.
-            continue;
-        }
-
-        // The first byte of the file name is empty. Meaning the rest of the directories 
-        // Are free in this entry
-        if (tempEntry->Filename[0] == 0x00) 
-        {
-            // There are no remaining files in this directory.
-            return true;
-        }
-
-        if (fileFn(tempEntry, ptrs))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-// Iterate over a SubDirectory
-// @param dir the subdirectory to iterate over 
-// @param fileFn The File Function to apply. 
-// @param ptrs Pointers to required paramters for the delegate. (If I had more time I would use VarArgs)
-void IterateSubDirectory(FILE dir, DirectoryDelegate fileFn, uintptr_t* ptrs)
-{
-    if (!(dir.Flags & FS_DIRECTORY))
-    {
-        return; 
-    }
-
-    do
-    {
-        FsFat12_Read(&dir, (char * )_tempEntries, BYTES_PER_SECTOR);
-        if (IterateSector(_tempEntries, fileFn, ptrs))
-        {
-            return;
-        }
-       
-    }
-    while (!dir.Eof);
-}
-
-// Iterate over the root folder
-// @param dir the subdirectory to iterate over 
-// @param fileFn The File Function to apply. 
-// @param ptrs Pointers to required paramters for the delegate. (If I had more time I would use VarArgs)
-void IterateRootFolder(DirectoryDelegate fileFn, uintptr_t* ptrs)
-{
-    for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
-    {
-        memcpy(_tempEntries, FloppyDriveReadSector(offsetRoot + i), BYTES_PER_SECTOR); 
-        if (IterateSector(_tempEntries, fileFn, ptrs))
-        {
-            return;
-        }
-    }
-}
-
-// Returns true and copies a file if 
-// @param entrySector The entry Sector 
-// @param nextFile The next file name
-// @return FILE the file we've retrieved.
-static bool MatchDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
-{
-    // Extract the pointers
-    char* nextFile = (char*) ptrs[0]; 
-    PFILE res = (PFILE) ptrs[1];
-    res->Flags = FS_INVALID;
-    pDirectoryEntry tempEntry = entry;
-
-    char filename[255];
-    if (tempEntry->Attrib != 0x0F)
-    {
-        FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, _delegateIsLFN);
-        if (strcmp(filename, nextFile) == 0) 
-        {
-            *res = ConvertToFile(tempEntry, filename);
-            return true;
-        }
-    }
-
-    _delegateIsLFN = tempEntry->Attrib == 0x0F;
-    return false;
-}
-
-//
-//  HEADER DECLARATIONS
-//
-
-// Initialize the file system.
-void FsFat12_Initialise()
-{
-    // Retrieve the Bios Parameter Block
-    pBootSector startSector = (pBootSector) FloppyDriveReadSector(0);
-
-    offsetFat = startSector->Bpb.ReservedSectors;
-    offsetRoot = (startSector->Bpb.NumberOfFats *  startSector->Bpb.SectorsPerFat) + offsetFat;
-    rootSize = (startSector->Bpb.NumDirEntries * ENTRY_SIZE) / startSector->Bpb.BytesPerSector;
-    offsetData = offsetRoot + rootSize;
-
-    size_t sizePerFat = startSector->Bpb.SectorsPerFat;
-    for (size_t i = 0; i < sizePerFat; i++)
-    {
-        memcpy(FAT_Table + (i << 9), FloppyDriveReadSector(offsetFat + i), 512);
-    }
 }
 
 // Get Name From DirectoryEntry 
@@ -262,49 +159,156 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
     *temp = 0;
 }
 
+// Converts Sector Number to Directory  
+// @param sectorNum the sector number
+// @param entry - entry to write to 
+// @post : DMA Buffer used. Will be overriden on next call. 
+pDirectoryEntry FsFat12_GetDirectoryFromSector(uint32_t sectorNum)
+{
+    if (sectorNum >= 2) 
+    {
+        // Copy entire directory structure
+        return (pDirectoryEntry) FloppyDriveReadSector(PHYSICAL_PADDING + offsetFat + (sectorNum - 2));
+    } 
+    else 
+    {
+        // Copy the root directory.
+        return (pDirectoryEntry) FloppyDriveReadSector(offsetRoot);
+    }
+}
+
+// Initialize the file system.
+void FsFat12_Initialise()
+{
+    // Retrieve the Bios Parameter Block
+    pBootSector startSector = (pBootSector) FloppyDriveReadSector(0);
+
+    // Offset to the first FAT
+    offsetFat = startSector->Bpb.ReservedSectors;
+    // Offset to the Root from the start
+    offsetRoot = (startSector->Bpb.NumberOfFats *  startSector->Bpb.SectorsPerFat) + offsetFat;
+    // Calculate the root size as the number of sectors.
+    rootSize = (startSector->Bpb.NumDirEntries * ENTRY_SIZE) / startSector->Bpb.BytesPerSector;
+    // Data is RootSize + Offset to the root.
+    offsetData = offsetRoot + rootSize;
+
+    size_t sizePerFat = startSector->Bpb.SectorsPerFat;
+    for (size_t i = 0; i < sizePerFat; i++)
+    {
+        memcpy(FAT_Table + (i * BYTES_PER_SECTOR), FloppyDriveReadSector(offsetFat + i), 512);
+    }
+}
+
 // Open a file 
 // This starts from the Root.
 // @param filename - filename
 // @return the opened file, set to FS_INVALID if not found.
-FILE FsFat12_Open(const char* filePath)
+FILE FsFat12_Open(const char* filename)
 {
-    FILE res;
-    res.Flags = FS_DIRECTORY;
-    strcpy(res.Name, "\\");
-    res.Eof = res.CurrentCluster = res.Position = 0;
+    // FILE res;
+    // res.Flags = FS_INVALID;
 
-    // If we are merely requesting root then we are good. 
-    if (strcmp("\\", filePath) == 0) 
+    // // Return Root when we can
+    // if (strcmp(filename, "\\") == 0)
+    // {
+    //     res.CurrentCluster = res.Position = res.Eof = 0;
+    //     res.Flags = FS_DIRECTORY;
+    //     strcpy(res.Name, "\\");
+    //     return res;
+    // } 
+
+    // char nextFile[255];
+    // ExtractNextEntry(&filename, nextFile);
+    // FsFat12_IterateFolder()
+
+
+    FILE res; 
+    res.Flags = FS_INVALID; 
+
+    if (strcmp(filename, "\\") == 0)
     {
+        res.Flags = FS_DIRECTORY;
+        res.CurrentCluster = res.Position = res.Eof = 0;
+        strcpy(res.Name, "\\");
         return res;
-    }
+    } 
 
-    uintptr_t pointers[2];    
-    pointers[1] = (uintptr_t) &res;
-    bool done = false;     
-    do 
+    char nextFile[255];
+    ExtractNextEntry(&filename, nextFile);
+    for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
     {
-        char nextFile[255];
-        ExtractNextEntry(&filePath, nextFile);
-        done = !(*filePath);
+        memcpy(_tempEntries, FloppyDriveReadSector(offsetRoot + i), BYTES_PER_SECTOR); 
+        pDirectoryEntry directory = (pDirectoryEntry) _tempEntries;
 
-        pointers[0] = (uintptr_t) nextFile;
-        FsFat12_IterateFolder(res, MatchDelegate, pointers);
-
-        if (done && res.Flags & (FS_FILE | FS_DIRECTORY))
+        if (directory[0].Filename[0] != 0x00) 
         {
-            return res; 
-        }
-        else if (!done && (res.Flags & (FS_INVALID | FS_FULLY_TRAVERSED | FS_FILE)))
+            // Traverse the directory, hopefully finding more..
+            res = MatchDelegate(directory, (uint32_t*)nextFile);
+            // We've either not traversed the directory at all 
+            // or we have but have still not found a file. 
+            if (!(res.Flags & FS_INVALID) || !(res.Flags & FS_FULLY_TRAVERSED))
+            {   
+                // Then continue to try and find from a subdirectory
+                if (*filename) 
+                {
+                    return FsFat12_OpenFrom(res, filename);
+                }
+                else
+                {
+                    return res;
+                }
+            }
+        } 
+        else 
         {
-            res.Flags = FS_INVALID;
+            // There are no more files in this directory. Fail.
             return res;
         }
     }
-    while (!done);
-
-    res.Flags = FS_INVALID;
+        
+    // Otherwise loop through until we get to the sub directory. 
     return res;
+}
+
+
+
+// Iterate a folder applying a function. 
+// If the FileFunction returns true quite iterating. 
+// @param the directory we wish to iterate. 
+// @param fileFN the file function 
+// @param passIn Variable to pass to the file function
+void FsFat12_IterateFolder(FILE dir, DirectoryDelegate fileFn, uint32_t* ptrs)
+{
+    do
+    {
+        FsFat12_Read(&dir, (char * )_tempEntries, BYTES_PER_SECTOR);
+        pDirectoryEntry tempEntry = _tempEntries;
+
+        for (size_t i = 0; i < ENTRIES_PER_SECTOR; i++, tempEntry++)
+        {
+
+            // This directory entry is free.
+            if (tempEntry->Filename[0] == 0xE5) 
+            {
+                // But there might still be more.
+                continue;
+            }
+
+            // The first byte of the file name is empty. Meaning the rest of the directories 
+            // Are free in this entry
+            if (tempEntry->Filename[0] == 0x00) 
+            {
+                // There are no remaining files in this directory.
+                return;
+            }
+
+            if (fileFn(tempEntry, ptrs))
+            {
+                return; 
+            }
+        }
+    }
+    while (!dir.Eof);
 }
 
 // Traverse the directory upwards to the filepath we pass in
@@ -313,54 +317,81 @@ FILE FsFat12_Open(const char* filePath)
 // @return The FILE we have found, flag set to INVALID if file not found.
 FILE FsFat12_OpenFrom(FILE dir, const char* filePath) 
 {
-    FILE res;
+    FILE fail;
     fail.Flags = FS_INVALID;
 
-    uintptr_t pointers[2];
-    pointers[1] = (uintptr_t) &res;
     bool done = false;     
     do 
     {
         char nextFile[255];
         ExtractNextEntry(&filePath, nextFile);
-        done = !(*filePath);
+        done = !(*temp);
 
-        pointers[0] = (uintptr_t) nextFile;
-        FsFat12_IterateFolder(dir, MatchDelegate, pointers);
+        FILE resFsFat12_IterateFolder(dir, MatchDelegate, (uint32_t*)nextFile);
         
-        if (done) 
+        if (done)
         {
             return res; 
         }
         else if (!done && res.Flags & (FS_INVALID || FS_FULLY_TRAVERSED || FS_FILE))
         {
-            res.Flags = FS_INVALID;
-            return res;
+            return fail;
         }
 
         dir = res;
     }
-    while (!done);
+    while (!done)
 
-    res.Flags = FS_INVALID;
-    return fail;
-}
+    // bool done = false;
+    // const char* temp = filePath;
+    // FILE fail;
+    // fail.Flags = FS_INVALID;
 
-// Iterate a folder applying a function. 
-// If the DirectoryDelegate returns true quit iterating. 
-// @param the directory we wish to iterate. 
-// @param fileFN the file function 
-// @param passIn Variable to pass to the file function
-void FsFat12_IterateFolder(FILE dir, DirectoryDelegate fileFn, uint32_t* ptrs)
-{
-    if (dir.CurrentCluster < 2)
-    {
-        IterateRootFolder(fileFn, ptrs);
-    }
-    else
-    {
-        IterateSubDirectory(dir, fileFn, ptrs);
-    }
+    // // We've either passed in a null pointer or a FILE.
+    // if (dir.Flags & FS_FILE)
+    // {
+    //     return fail;
+    // }
+
+    // FILE res; 
+    // while (!done)
+    // {
+    //     bool isLFN = false;
+    //     char nextEntry[255];
+    //     ExtractNextEntry(&temp, nextEntry);
+        
+    //     // Navigate Folder Structure. 
+    //     do
+    //     {
+    //         FsFat12_Read(&dir, (char* ) _tempEntries, BYTES_PER_SECTOR);
+    //         pDirectoryEntry tempEntry = _tempEntries;
+    //         res = RetrieveFileFromDirectorySector(_tempEntries, nextEntry);
+
+    //         if (res.Flags & FS_FULLY_TRAVERSED || (!done && res.Flags == FS_FILE))
+    //         {
+    //             return fail;
+    //         }
+    //         else if (!(res.Flags & FS_INVALID))
+    //         {
+    //             if (done)
+    //             {
+    //                 return res;
+    //             }
+    //             else if (res.Flags & FS_DIRECTORY)
+    //             {
+    //                 dir = res;
+    //                 break;
+    //             }
+                
+    //             return fail;
+    //         }
+    //     }
+    //     while (res.Flags & FS_INVALID && !res.Eof);
+    //     // if we've reached the end of the path we're done. (IE: We've hit null in the path)
+    //     done = !(*temp);
+    // }
+
+    // return res;
 }
 
 // Read from a file system

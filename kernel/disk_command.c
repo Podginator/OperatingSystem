@@ -8,95 +8,46 @@
 
 // The Filepath we're using
 static char _pwd[2048];
-// A Temporary Buffer used for Autocomplete and ChangeDirectory.
-static char  _tempBuffer[2048];
+// The Current Working Directory.
+static FILE _cwd;
 
-// 16 Directory Entries per current directory.
-static DirectoryEntry _cwd[16]; 
-
-// Forward declarations
-static inline char* PrepareFilePath(char* filepath); 
-static inline void GetDateCreated(uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year);
-static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds);
-static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLFN);
+// Static Declarations
 static void SetPresentWorkingDirectory(const char* pwd);
 
-// Extract the date created from the entry->DateCreated property. 
-// @param dateCreated the Date Created 
-// @param day OUT parameter to write day to
-// @param month OUT parameter to write month to
-// @param year OUT parameter to write year to
-// @pre: Date Created should be the Directory Entries 
-static void GetDateCreated(const uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year) 
+// Inline Declarations 
+static inline char* PrepareFilePath(char* filepath); 
+static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLFN);
+static inline void GetDateCreated(uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year);
+static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds);
+static inline FILE GetFileFromPath(char* dir, char* outPath);
+
+// Delegates Declarations
+static inline bool ListFileDelegate(pDirectoryEntry entry, uintptr_t*);
+static inline bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t*);
+
+//
+// Static Definition
+// 
+
+// Set the Present Working Directory.
+// @param pwd what to set the Present Working Directory as
+static void SetPresentWorkingDirectory(const char* pwd)
 {
-    *day = ((dateCreated) & 0x00ff) & ~(0b111 << 5);
-    *month = ((dateCreated >> 5) & 0x000f);
-    *year = 1980 + (dateCreated >> 9);
+    // Copy the pwd to the _pwd 
+    strcpy(_pwd, pwd);
 }
 
-// Extract the TIME created from the DirectoryEntry TimeCreated Property. 
-// @param timeCreated the time it was created
-// @param hour OUT the hour it was created
-// @param minutes OUT the minutes it was created 
-// @param seconds OUT Number of seconds (0-29) - 2 second accuracy 
-// @pre:  timeCreated should be in the DirectoryEntry timeCreated format.
-static void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds)
-{
-    // Bitpacked as follows:
-    // Bit 0-4 : Seconds (0-29), i.e. it only stores to a 2 second accuracy
-    // Bit 5-10 : Minutes (0-59)
-    // Bit 11-15 : Hours (0-23)
-    *seconds = ((timeCreated) & 0x00ff) & ~(0b111 << 5);
-    *minutes = ((timeCreated >> 5) & 0x00ff) & ~(0b11 << 6);
-    *hour =    (timeCreated >> 11);
-}
-
-// Return a file from the a filepath. 
-// @ param filepath the filepath to retrieve from 
-// @ param fullFilePath OUT if not null use to store the fullFilePath
-// @ return the FILE returned, FS_INVALID if none.
-// @post if outPath is not null the outpath will be set the the pwd, this handles ../. 
-static inline FILE GetFileFromPath(char* dir, char* outPath) 
-{
-    FILE directory; 
-    directory.Flags = FS_INVALID;
-
-    // If the first character is not a backspace we are not starting from root.
-    if (dir[0] != '\\') 
-    {
-        directory = FsFat12_OpenFrom(_cwd, dir);
-        
-        if (outPath)
-        {
-            strcpy(outPath, _pwd);
-            if (_pwd[1] != NULL)
-            { 
-                // Currently PWD is not '\'
-                strcat(outPath, _pwd, "\\");
-            }
-
-            strcat(outPath, outPath, dir);
-        }
-    } 
-    else 
-    {
-        if (outPath) {
-            // Otherwise let's just copy
-            strcpy(outPath, dir);
-        }
-        directory = FsFat12_Open(dir);
-    }
-
-    return directory;
-}
+//
+// Inline Definitions
+//
 
 // Prepare the file path.
 // @param filepath - The file Path 
 // @return the corrected file Path.
-static char* PrepareFilePath(char* filepath) 
+static inline char* PrepareFilePath(char* filepath) 
 {
     char* temp = filepath;
-    char* writeTo = filepath; 
+    char* writeTo = filepath;
 
     while (*temp != 0)
     {
@@ -109,7 +60,6 @@ static char* PrepareFilePath(char* filepath)
                 char secondChar = *(temp + 2);
                 if (secondChar == '.') 
                 {
-                    // Loop Back to the previous \. 
                     while (*(--writeTo) != '\\');
                     temp += 3;
                     continue;
@@ -191,37 +141,143 @@ static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLongF
     ConsoleWriteString("  ");                
 
     // Get the filename from the directory.
-    char fileName[256];
-    FsFat12_GetNameFromDirectoryEntry(entry, fileName, isLongFileName);
-    ConsoleWriteString(fileName);
+    FsFat12_GetNameFromDirectoryEntry(entry, _tempBuffer, isLongFileName);
+    ConsoleWriteString(_tempBuffer);
     ConsoleWriteString("  ");
 
     // Print the filesize
     if (!(entry->Attrib & 0x10))
     {
         ConsoleWriteInt(entry->FileSize, 10);
-    } 
-
-    ConsoleWriteString("  ");    
-    ConsoleWriteInt(entry->FirstCluster, 10);            
+    }       
 }
+
+// Extract the date created from the entry->DateCreated property. 
+// @param dateCreated the Date Created 
+// @param day OUT parameter to write day to
+// @param month OUT parameter to write month to
+// @param year OUT parameter to write year to
+// @pre: Date Created should be the Directory Entries 
+static inline void GetDateCreated(const uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year) 
+{
+    *day = ((dateCreated) & 0x00ff) & ~(0b111 << 5);
+    *month = ((dateCreated >> 5) & 0x000f);
+    *year = 1980 + (dateCreated >> 9);
+}
+
+// Extract the TIME created from the DirectoryEntry TimeCreated Property. 
+// @param timeCreated the time it was created
+// @param hour OUT the hour it was created
+// @param minutes OUT the minutes it was created 
+// @param seconds OUT Number of seconds (0-29) - 2 second accuracy 
+// @pre:  timeCreated should be in the DirectoryEntry timeCreated format.
+static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds)
+{
+    // Bitpacked as follows:
+    // Bit 0-4 : Seconds (0-29), i.e. it only stores to a 2 second accuracy
+    // Bit 5-10 : Minutes (0-59)
+    // Bit 11-15 : Hours (0-23)
+    *seconds = ((timeCreated) & 0x00ff) & ~(0b111 << 5);
+    *minutes = ((timeCreated >> 5) & 0x00ff) & ~(0b11 << 6);
+    *hour =    (timeCreated >> 11);
+}
+
+// Return a file from the a filepath. 
+// @ param filepath the filepath to retrieve from 
+// @ param fullFilePath OUT if not null use to store the fullFilePath
+// @ return the FILE returned, FS_INVALID if none.
+// @ post if outPath is not null the outpath will be set the the pwd, this handles ../. 
+static inline FILE GetFileFromPath(char* dir, char* outPath) 
+{
+    FILE directory; 
+    directory.Flags = FS_INVALID;
+
+    // If the first character is not a backspace we are not starting from root.
+    if (dir[0] != '\\') 
+    {
+        directory = FsFat12_OpenFrom(_cwd, dir);
+        
+        if (outPath)
+        {
+            strcat(outPath, _pwd, "\\");
+            strcat(outPath, outPath, dir);
+        }
+    } 
+    else 
+    {
+        // If we're here we're navigating from, so we might as well Pre-prepare our file path. 
+        // This ensures that we don't do any unneccessary IO (Ie: /Testing/././././Testing)
+        // Would usually do 6 Change Directories, but could be reduced to two. (/Testing/Testing) 
+        PrepareFilePath(dir);
+        if (outPath) 
+        {
+            // Otherwise let's just Copy 
+            strcpy(outPath, dir);
+        }
+        directory = FsFat12_Open(dir);
+    }
+
+    return directory;
+}
+
+// 
+// Delegate Defintions
+//
+
+// Print each file.
+// @param the Entry to read from
+// @param unused = pass NULL
+// @return Always False, we want to navigate all the folders. 
+bool ListFileDelegate(pDirectoryEntry entry,  uintptr_t* ptrs)
+{
+    if (entry->Attrib != 0x0f && !(entry->Attrib & 0x02))
+    {
+        PrintDirectoryEntry(entry, _delegateIsLFN);
+        ConsoleWriteString("\n");
+    }
+    
+    _delegateIsLFN = entry->Attrib == 0x0F;
+    return false;
+}
+
+// AutoComplete Delegate
+// Takes a delegate 
+bool AutoCompleteDelegate(pDirectoryEntry tempEntry, uintptr_t* ptrs)
+{
+    char* compare = (char*) ptrs[0];
+    size_t compareLen = *((size_t*) ptrs[2]);
+    char** testBuffer = (char**) ptrs[1];
+    int* num = (int*) ptrs[3];
+
+    if (tempEntry->Attrib != 0x0f)
+    {
+        FsFat12_GetNameFromDirectoryEntry(tempEntry, *testBuffer, _delegateIsLFN);
+
+        if (strncmp(*testBuffer, compare, compareLen) == 0)
+        {
+            size_t lenComplete = strlen(*testBuffer);
+            *testBuffer += lenComplete + 1;
+            *(*testBuffer - 1) = ' ';
+            *num = *num + 1;
+        }
+    }
+
+    _delegateIsLFN = tempEntry->Attrib == 0x0F; 
+    return false;
+}
+
+//
+// Header Declarations
+//
 
 // Initialize
 void DiskCommand_Init()
 {    
     // Copy the root directory.
-    memcpy(_cwd, FsFat12_GetDirectoryFromSector(2), 512);
- 
+    _cwd = FsFat12_Open("\\");
+
     // Initialize to the pwd being empty.
     SetPresentWorkingDirectory("\\");
-}
-
-// Set the Present Working Directory.
-// @param pwd what to set the Present Working Directory as
-static void SetPresentWorkingDirectory(const char* pwd)
-{
-    // Copy the pwd to the _pwd 
-    strcpy(_pwd, pwd);
 }
 
 // Get the present working directory
@@ -235,19 +291,12 @@ char* DiskCommand_GetPresentWorkingDirectory()
 // @param dir the directory to change to. 
 void DiskCommand_ChangeDirectory(char* dir)
 {
-    // This is here as it's used only in this function. 
-    // The functions proceeding this do not require much stack space (We will not blow the stack)
-    // We merely memcpy it to the _pwd if we have returned the correct directory.
     FILE directory = GetFileFromPath(dir, _tempBuffer);
 
     //If we've returned a directory, we've accessed the correct thing
     if (directory.Flags == FS_DIRECTORY)
     {
-        // Return current directory? 
-        // Is the memcpy a better use of our resources. Probably. Actually.
-        memcpy(_cwd, FsFat12_GetDirectoryFromSector(directory.CurrentCluster), 512);
-
-        // Copy the pwd.
+        _cwd = directory;
         SetPresentWorkingDirectory(PrepareFilePath(_tempBuffer));
     }
     else
@@ -261,38 +310,7 @@ void DiskCommand_ChangeDirectory(char* dir)
 // @param the filePath of the file to read files from. 
 void DiskCommand_ListFiles()
 {
-    bool done = false;
-    bool nextLFN = false; 
-    pDirectoryEntry tempEntry = _cwd;
-    while (!done)
-    {
-        // Read all entries in the current directory.
-        for (size_t j = 0; j < 16; j++, tempEntry++)
-        {
-                // This directory entry is free.
-                if (tempEntry->Filename[0] == 0xE5) 
-                {
-                    // But there might still be more.
-                    continue;
-                }
-
-                // The first byte of the file name is empty. Meaning the rest of the directories 
-                // Are free in this entry
-                if (tempEntry->Filename[0] == 0x00) 
-                {
-                    // There are no remaining files in this directory.
-                    return;
-                }
-
-                if (tempEntry->Attrib != 0x0f && !(tempEntry->Attrib & 0x02))
-                {
-                    PrintDirectoryEntry(tempEntry, nextLFN);
-                    ConsoleWriteString("\n");
-                }
-
-                nextLFN = tempEntry->Attrib == 0x0F;
-        }
-    }
+    FsFat12_IterateFolder(_cwd, ListFileDelegate, NULL);
 }
 
 // Process The ReadFile  
@@ -341,17 +359,16 @@ void DiskCommand_ReadFile(char* filePath)
 // @param num OUT number of results foumd 
 void DiskCommand_AutoComplete(char* path, int* num)
 {
-
     // First Step: 
     //  Get to the end of path but exclude the last one. 
     //  IE: path = /root/test/one/te We want to travere to /root/test/one/ 
-    //  and get te to autocorrect.    
-    DirectoryEntry entry[16];
-
+    //  and get 'te' to autocorrect.    
     char* temp = path;
+    char* tempBuffer = _tempBuffer;
     int charLoc = -1;
     int loc = -1;
-
+    
+    FILE file;
     while ((loc = strchr((temp + charLoc), '\\') + 1) > 0)
     {
         charLoc += loc;
@@ -361,64 +378,42 @@ void DiskCommand_AutoComplete(char* path, int* num)
     {
         char character = *(temp + charLoc); 
         *(temp + charLoc) = 0;
-        FILE file = GetFileFromPath(temp, NULL);
+        file = GetFileFromPath(temp, NULL);
         *(temp + charLoc) = character;
-
-        if (file.Flags == FS_DIRECTORY)
-        {   
-            memcpy(entry, (pDirectoryEntry)FsFat12_GetDirectoryFromSector(file.CurrentCluster), 512);
-        } 
     }
     else
     {
         // Set Charloc to 0 (As we later use this to find what to compare too) 
         charLoc = 0;
-        memcpy(entry, _cwd, 512);
+        file = _cwd;
     }
 
 
-    bool nextLFN = false;
-    char* tempFound = _tempBuffer;
-    // If the first byte is 0 there's nothing remaining. 
-    if (entry[0].Filename[0] != 0x00) 
+    // Second Step:
+    // Iterate through each file and store any file with the same first n characters.
+    char* compare = temp + charLoc;
+    size_t strSize = strlen(compare);
+    // Iterate through all the folders, passing in anything we need
+    uintptr_t pointers[4];
+    pointers[0] = (uintptr_t) compare; 
+    pointers[1] = (uintptr_t) &tempBuffer;
+    pointers[2] = (uintptr_t) &strSize;    
+    pointers[3] = (uintptr_t) num;
+    FsFat12_IterateFolder(file, AutoCompleteDelegate, pointers); 
+    *tempBuffer = 0;
+
+    
+    // Final Step:
+    if (*num == 1)
     {
-        pDirectoryEntry tempEntry = entry;
-        char* compare = temp + charLoc;
-        size_t compareLen = strlen(compare);
-
-        if (compareLen > 0) 
-        {
-            for (size_t j = 0; j < 16; j++, tempEntry++)
-            {
-                if (tempEntry->Attrib != 0x0f)
-                {
-                    FsFat12_GetNameFromDirectoryEntry(tempEntry, tempFound, nextLFN);
-
-                    if (strncmp(tempFound, compare, compareLen) == 0)
-                    {
-                        *num = *num + 1;                    
-                        size_t tempLen = strlen(tempFound);
-                        tempFound += tempLen + 1;
-                        *(tempFound - 1) = ' ';
-                    }
-                }
-
-                nextLFN = tempEntry->Attrib == 0x0F;
-            }
-        }
-        *(tempFound) = 0;
-        
-        // If we've only found one, autocomplete
-        if (*num == 1)
-        {
-            int delimiterLoc = strchr(_tempBuffer, ' ');
-            memcpy(compare, _tempBuffer, delimiterLoc);
-        }
-        else if (*num > 0)
-        {
-            // Otherwise just print them out.`
-            ConsoleWriteCharacter('\n');
-            ConsoleWriteString(_tempBuffer);
-        }
+        // If we've just found one, change the buffer 
+        int delimiterLoc = strchr(_tempBuffer, ' ');
+        memcpy(compare, _tempBuffer, delimiterLoc);
+    }
+    else if ( *num > 0 )
+    {
+        // Otherwise just print them out.
+        ConsoleWriteCharacter('\n');
+        ConsoleWriteString(_tempBuffer);
     }
 } 
