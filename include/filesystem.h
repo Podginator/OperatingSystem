@@ -10,7 +10,6 @@
 #define FS_DIRECTORY  0b10
 #define FS_INVALID    0b100
 
-
 // Statics
 #define ENTRY_SIZE 32
 #define PHYSICAL_PADDING 32
@@ -52,6 +51,17 @@ typedef struct _DirectoryEntry
 } __attribute__((packed)) DirectoryEntry;
 
 typedef DirectoryEntry * pDirectoryEntry;
+
+
+// Bytes   Content
+// 0       Bits 0-4: sequence number; bit 6: final part of name
+// 1-10    Unicode characters 1-5
+// 11      Attribute: 0xf
+// 12      Type: 0
+// 13      Checksum of short name
+// 14-25   Unicode characters 6-11
+// 26-27   Starting cluster: 0
+// 28-31   Unicode characters 12-13
 
 
 // The long file name entry, packed slightly differently.

@@ -21,21 +21,6 @@ echo Hello, world12 >y:12file.txt
 echo Hello, world13 >y:13file.txt
 echo Hello, world14 >y:14file.txt
 
-echo Hello, world1 >y:/Testing/file.txt
-echo Hello, world2 >y:/Testing/2file.txt
-echo Hello, world3 >y:/Testing/3file.txt
-echo Hello, world4 >y:/Testing/4file.txt
-echo Hello, world5 >y:/Testing/5file.txt
-echo Hello, world6 >y:/Testing/6file.txt
-echo Hello, world7 >y:/Testing/7file.txt
-echo Hello, world8 >y:/Testing/8file.txt
-echo Hello, world9 >y:/Testing/9file.txt
-echo Hello, world10 >y:/Testing/10file.txt
-echo Hello, world11 >y:/Testing/11file.txt
-echo Hello, world12 >y:/Testing/12file.txt
-echo Hello, world13 >y:/Testing/13file.txt
-echo Hello, world14 >y:/Testing/14file.txt
-
 rem
 rem  Add commands here to copy test files to disk y
 rem

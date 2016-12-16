@@ -205,10 +205,6 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
     } 
     else 
     {
-        // If we're here we're navigating from, so we might as well Pre-prepare our file path. 
-        // This ensures that we don't do any unneccessary IO (Ie: /Testing/././././Testing)
-        // Would usually do 6 Change Directories, but could be reduced to two. (/Testing/Testing) 
-        PrepareFilePath(dir);
         if (outPath) 
         {
             // Otherwise let's just Copy 
@@ -365,27 +361,17 @@ void DiskCommand_AutoComplete(char* path, int* num)
     //  and get 'te' to autocorrect.    
     char* temp = path;
     char* tempBuffer = _tempBuffer;
-    int charLoc = -1;
-    int loc = -1;
-    
-    FILE file;
-    while ((loc = strchr((temp + charLoc), '\\') + 1) > 0)
-    {
-        charLoc += loc;
-    }
+    int charLoc = 0;
+    FILE file = _cwd; 
 
-    if (charLoc > -1) 
+
+    for (int loc = -1; loc != 0; loc = strchr((temp + charLoc), '\\') + 1, charLoc += loc);
+    if (charLoc > 0) 
     {
         char character = *(temp + charLoc); 
         *(temp + charLoc) = 0;
         file = GetFileFromPath(temp, NULL);
         *(temp + charLoc) = character;
-    }
-    else
-    {
-        // Set Charloc to 0 (As we later use this to find what to compare too) 
-        charLoc = 0;
-        file = _cwd;
     }
 
 
@@ -393,7 +379,6 @@ void DiskCommand_AutoComplete(char* path, int* num)
     // Iterate through each file and store any file with the same first n characters.
     char* compare = temp + charLoc;
     size_t strSize = strlen(compare);
-    // Iterate through all the folders, passing in anything we need
     uintptr_t pointers[4];
     pointers[0] = (uintptr_t) compare; 
     pointers[1] = (uintptr_t) &tempBuffer;
@@ -401,7 +386,6 @@ void DiskCommand_AutoComplete(char* path, int* num)
     pointers[3] = (uintptr_t) num;
     FsFat12_IterateFolder(file, AutoCompleteDelegate, pointers); 
     *tempBuffer = 0;
-
     
     // Final Step:
     if (*num == 1)

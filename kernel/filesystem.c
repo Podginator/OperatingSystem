@@ -89,7 +89,6 @@ static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer)
 bool IterateSector(pDirectoryEntry entry, DirectoryDelegate fileFn, uintptr_t* ptrs)
 {
     pDirectoryEntry tempEntry = entry;
-    _delegateIsLFN = false;
     for (size_t i = 0; i < ENTRIES_PER_SECTOR; i++, tempEntry++)
     {
         // This directory entry is free.
@@ -122,6 +121,7 @@ bool IterateSector(pDirectoryEntry entry, DirectoryDelegate fileFn, uintptr_t* p
 // @param ptrs Pointers to required paramters for the delegate. (If I had more time I would use VarArgs)
 void IterateSubDirectory(FILE dir, DirectoryDelegate fileFn, uintptr_t* ptrs)
 {
+    _delegateIsLFN = false;
     if (!(dir.Flags & FS_DIRECTORY))
     {
         return; 
@@ -145,6 +145,7 @@ void IterateSubDirectory(FILE dir, DirectoryDelegate fileFn, uintptr_t* ptrs)
 // @param ptrs Pointers to required paramters for the delegate. (If I had more time I would use VarArgs)
 void IterateRootFolder(DirectoryDelegate fileFn, uintptr_t* ptrs)
 {
+    _delegateIsLFN = false;
     for (size_t i = 0; i < ROOT_DIRECTORY_SECTOR_SIZE; i++)
     {
         memcpy(_tempEntries, FloppyDriveReadSector(offsetRoot + i), BYTES_PER_SECTOR); 
@@ -235,6 +236,8 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
 
         bool ok = true;
         entry--;
+        ConsoleWriteInt(((pLongFileNameEntry) entry)->SequenceNumber, 2);
+        ConsoleWriteInt(((pLongFileNameEntry) entry)->Reserved_Two, 10);
         while (entry->Attrib == 0x0f && ok)
         {
             // There are 13 UTF-16 Characters in a LFN entry.
@@ -314,7 +317,8 @@ FILE FsFat12_Open(const char* filePath)
 FILE FsFat12_OpenFrom(FILE dir, const char* filePath) 
 {
     FILE res;
-    fail.Flags = FS_INVALID;
+    res.Flags = FS_INVALID;
+    const char* tempFile = filePath;
 
     uintptr_t pointers[2];
     pointers[1] = (uintptr_t) &res;
@@ -322,8 +326,8 @@ FILE FsFat12_OpenFrom(FILE dir, const char* filePath)
     do 
     {
         char nextFile[255];
-        ExtractNextEntry(&filePath, nextFile);
-        done = !(*filePath);
+        ExtractNextEntry(&tempFile, nextFile);
+        done = !(*tempFile);
 
         pointers[0] = (uintptr_t) nextFile;
         FsFat12_IterateFolder(dir, MatchDelegate, pointers);
@@ -343,7 +347,7 @@ FILE FsFat12_OpenFrom(FILE dir, const char* filePath)
     while (!done);
 
     res.Flags = FS_INVALID;
-    return fail;
+    return res;
 }
 
 // Iterate a folder applying a function. 
