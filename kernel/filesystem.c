@@ -21,6 +21,7 @@ DirectoryEntry _tempEntries[ENTRIES_PER_SECTOR];
 
 // Temp Buffer for files.
 char _tempBuffer[2048];
+char _longFileName[256];
 bool _delegateIsLFN = false;
 
 // ** Forward Declarations ** 
@@ -168,16 +169,24 @@ static bool MatchDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
     res->Flags = FS_INVALID;
     pDirectoryEntry tempEntry = entry;
 
-    char filename[255];
-    if (tempEntry->Attrib != 0x0F)
+    if (entry->Attrib != 0x0f && !(entry->Attrib & 0x02))
     {
-        FsFat12_GetNameFromDirectoryEntry(tempEntry, filename, _delegateIsLFN);
-        if (strcmp(filename, nextFile) == 0) 
+        if (!_delegateIsLFN)
         {
-            *res = ConvertToFile(tempEntry, filename);
+            FsFat12_GetNameFromDirectoryEntry(entry, _longFileName);
+        }
+
+        if (strcmp(_longFileName, nextFile) == 0) 
+        {
+            *res = ConvertToFile(entry, _longFileName);
             return true;
         }
     }
+    else
+    {
+        FsFat12_BuildLongFileName((pLongFileNameEntry) entry, _longFileName);
+    }
+
 
     _delegateIsLFN = tempEntry->Attrib == 0x0F;
     return false;
@@ -205,14 +214,44 @@ void FsFat12_Initialise()
     }
 }
 
-// Get Name From DirectoryEntry 
-// @param entry the directoy
-// @param buffer OUT the buffer to write the name to 
-// @param isLFN is this Long File Name?
-void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool isLFN)
+void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, const char* fname)
 {
-    char* temp = buffer;
-    if (!isLFN)
+    char* temp = fname;
+
+    // Long File Name Handle 
+    if (entry->Attrib & 0x0F)
+    {
+        pLongFileNameEntry lfnEntry = (pLongFileNameEntry) entry;
+        bool isLast = (lfnEntry->SequenceNumber >> 6) != 0;
+        uint8_t sequenceNum =  lfnEntry->SequenceNumber & 0b00111111;
+        // Go to the correct part of the buffer.
+        temp += ((sequenceNum - 1) * 13);
+
+        size_t i = 0;
+        uint16_t* utfs = lfnEntry->Filename_One;
+        for (; i < 13 && *utfs; i++)
+        {
+            // Otherwise copy 
+            *temp++ = (char) *utfs++;
+            
+            if (i == 4) 
+            {
+                utfs = lfnEntry->Filename_Two;
+            }
+            else if (i == 10)
+            {
+                utfs = lfnEntry->Filename_Three;
+            }
+        }
+
+        if (isLast)
+        {
+            // nullterminate
+            *(temp) = 0;
+        }
+
+    }
+    else
     {
         char* name = entry->Filename;
         int counter = 0;
@@ -230,39 +269,47 @@ void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool
                 *temp++ = entry->Ext[i];
             }
         }
+        *temp = 0;
+
     }
-    else
+  
+}
+
+// Get Name From DirectoryEntry 
+// @param entry the directoy
+// @param buffer OUT the buffer to write the name to 
+// @param isLFN is this Long File Name?
+void FsFat12_BuildLongFileName(pLongFileNameEntry entry, char* buffer)
+{
+    size_t i = 0;
+
+    bool isLast = (entry->SequenceNumber >> 6) != 0;
+    uint8_t sequenceNum =  entry->SequenceNumber & 0b00111111;
+
+    char* temp = buffer;
+    temp += ((sequenceNum - 1) * 13);
+
+    uint16_t* utfs = entry->Filename_One;
+    for (; i < 13 && *utfs; i++)
     {
-
-        bool ok = true;
-        entry--;
-        ConsoleWriteInt(((pLongFileNameEntry) entry)->SequenceNumber, 2);
-        ConsoleWriteInt(((pLongFileNameEntry) entry)->Reserved_Two, 10);
-        while (entry->Attrib == 0x0f && ok)
-        {
-            // There are 13 UTF-16 Characters in a LFN entry.
-            uint16_t* utfs = ((pLongFileNameEntry) entry)->Filename_One;
-
-            for (size_t i = 0; i < 13 && (ok = *utfs); i++)
-            {
-                // Otherwise copy 
-                *temp++ = (char) *utfs++;
-                
-                if (i == 4) 
-                {
-                    utfs = ((pLongFileNameEntry) entry)->Filename_Two;
-                }
-                else if (i == 10)
-                {
-                    utfs = ((pLongFileNameEntry) entry)->Filename_Three;
-                }
-            }
-            entry--;
-        }
+        // Otherwise copy 
+        *temp++ = (char) *utfs++;
         
+        if (i == 4) 
+        {
+            utfs = entry->Filename_Two;
+        }
+        else if (i == 10)
+        {
+            utfs = entry->Filename_Three;
+        }
     }
 
-    *temp = 0;
+    if (isLast)
+    {
+        // nullterminate
+        *(temp) = 0;
+    }
 }
 
 // Open a file 

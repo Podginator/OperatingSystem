@@ -94,11 +94,20 @@ extern bool _delegateIsLFN;
 // A Temporary Buffer used for Autocomplete and ChangeDirectory.
 extern char  _tempBuffer[2048];
 
+// Temporary storage for a _LFN, as we call this multiple times
+extern char _longFileName[256];
+
 // Get Name From DirectoryEntry 
 // @param entry the directoy
 // @param buffer OUT the buffer to write the name to 
 // @param isLFN is this Long File Name?
-void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, char* buffer, bool isLFN);
+void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, const char* name);
+
+// Get Name From DirectoryEntry 
+// @param entry the directoy
+// @param buffer OUT the buffer to write the name to 
+// @param isLFN is this Long File Name?
+void FsFat12_BuildLongFileName(pLongFileNameEntry entry, char* buffer);
 
 // Initialise the fs
 void FsFat12_Initialise();

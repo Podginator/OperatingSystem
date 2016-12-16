@@ -8,6 +8,7 @@
 
 // The Filepath we're using
 static char _pwd[2048];
+
 // The Current Working Directory.
 static FILE _cwd;
 
@@ -16,7 +17,7 @@ static void SetPresentWorkingDirectory(const char* pwd);
 
 // Inline Declarations 
 static inline char* PrepareFilePath(char* filepath); 
-static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLFN);
+static inline void PrintDirectoryEntry(const pDirectoryEntry entry, const char* name);
 static inline void GetDateCreated(uint16_t dateCreated, uint8_t* day, uint8_t* month, uint16_t* year);
 static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* minutes, uint8_t* seconds);
 static inline FILE GetFileFromPath(char* dir, char* outPath);
@@ -99,7 +100,7 @@ static inline char* PrepareFilePath(char* filepath)
 // Print the DirectoryEntry (Prints like Windows: CMD dir)
 // @param entry the directory entry 
 // @param isLongFileName - We want to handle it if we've passed in a long file name
-static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLongFileName)
+static inline void PrintDirectoryEntry(const pDirectoryEntry entry, const char* name)
 {
     // Do Writing. (like CMD)
     size_t counter = 0;
@@ -141,8 +142,7 @@ static inline void PrintDirectoryEntry(const pDirectoryEntry entry, bool isLongF
     ConsoleWriteString("  ");                
 
     // Get the filename from the directory.
-    FsFat12_GetNameFromDirectoryEntry(entry, _tempBuffer, isLongFileName);
-    ConsoleWriteString(_tempBuffer);
+    ConsoleWriteString(name);
     ConsoleWriteString("  ");
 
     // Print the filesize
@@ -228,16 +228,22 @@ bool ListFileDelegate(pDirectoryEntry entry,  uintptr_t* ptrs)
 {
     if (entry->Attrib != 0x0f && !(entry->Attrib & 0x02))
     {
-        PrintDirectoryEntry(entry, _delegateIsLFN);
+        // If the previous entry was a LFN directory we've already got the full filename
+        // Otherwsie we need to retrieve it. 
+        if (!_delegateIsLFN)
+        {
+            FsFat12_GetNameFromDirectoryEntry(entry, _longFileName);
+        }
+        PrintDirectoryEntry(entry, _longFileName);
         ConsoleWriteString("\n");
     }
-    
+    FsFat12_GetNameFromDirectoryEntry(entry, _longFileName);
+
     _delegateIsLFN = entry->Attrib == 0x0F;
     return false;
 }
 
 // AutoComplete Delegate
-// Takes a delegate 
 bool AutoCompleteDelegate(pDirectoryEntry tempEntry, uintptr_t* ptrs)
 {
     char* compare = (char*) ptrs[0];
@@ -247,8 +253,12 @@ bool AutoCompleteDelegate(pDirectoryEntry tempEntry, uintptr_t* ptrs)
 
     if (tempEntry->Attrib != 0x0f)
     {
-        FsFat12_GetNameFromDirectoryEntry(tempEntry, *testBuffer, _delegateIsLFN);
-
+        // Get the Short File name if previous entries weren't a long filename directory.   
+        if (!_delegateIsLFN) 
+        {
+            FsFat12_GetNameFromDirectoryEntry(tempEntry, *testBuffer);
+        }
+        
         if (strncmp(*testBuffer, compare, compareLen) == 0)
         {
             size_t lenComplete = strlen(*testBuffer);
@@ -257,6 +267,7 @@ bool AutoCompleteDelegate(pDirectoryEntry tempEntry, uintptr_t* ptrs)
             *num = *num + 1;
         }
     }
+    FsFat12_GetNameFromDirectoryEntry(tempEntry, *testBuffer);
 
     _delegateIsLFN = tempEntry->Attrib == 0x0F; 
     return false;
@@ -394,7 +405,7 @@ void DiskCommand_AutoComplete(char* path, int* num)
         int delimiterLoc = strchr(_tempBuffer, ' ');
         memcpy(compare, _tempBuffer, delimiterLoc);
     }
-    else if ( *num > 0 )
+    else if (*num > 0)
     {
         // Otherwise just print them out.
         ConsoleWriteCharacter('\n');
