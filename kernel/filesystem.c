@@ -172,7 +172,7 @@ static bool MatchDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
     res->Flags = FS_INVALID;
     pDirectoryEntry tempEntry = entry;
 
-    if (FsFat12_HandleName(entry, _longFileName))
+    if (FsFat12_RetrieveNameFromDirectoryEntry(entry, _longFileName))
     {
         if (strcmp(_longFileName, nextFile) == 0) 
         {
@@ -210,7 +210,7 @@ void FsFat12_Initialise()
 // @param the entry to handle the name for
 // @param the buffer to append to 
 // @param In/Out :True if the last entry checked was a Long File Name
-bool FsFat12_HandleName(pDirectoryEntry entry, char* fname)
+bool FsFat12_RetrieveNameFromDirectoryEntry(pDirectoryEntry entry, char* fname)
 {
     char* temp = fname;
 

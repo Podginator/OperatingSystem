@@ -97,19 +97,13 @@ extern char  _tempBuffer[2048];
 // Temporary storage for a _LFN, as we call this multiple times
 extern char _longFileName[256];
 
-bool FsFat12_HandleName(pDirectoryEntry entry, char* fname);
 
 // Get Name From DirectoryEntry 
 // @param entry the directoy
 // @param buffer OUT the buffer to write the name to 
-// @param isLFN is this Long File Name?
-void FsFat12_GetNameFromDirectoryEntry(pDirectoryEntry entry, const char* name);
-
-// Get Name From DirectoryEntry 
-// @param entry the directoy
-// @param buffer OUT the buffer to write the name to 
-// @param isLFN is this Long File Name?
-void FsFat12_BuildLongFileName(pLongFileNameEntry entry, char* buffer);
+// @return True if the name has been completed : IE we've reached the file proceeding the LFN entries,
+//         False otherwise.
+bool FsFat12_RetrieveNameFromDirectoryEntry(pDirectoryEntry entry, char* name);
 
 // Initialise the fs
 void FsFat12_Initialise();

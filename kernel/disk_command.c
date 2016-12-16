@@ -226,7 +226,7 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
 // @return Always False, we want to navigate all the folders. 
 bool ListFileDelegate(pDirectoryEntry entry,  uintptr_t* ptrs)
 {
-    if (FsFat12_HandleName(entry, _longFileName))
+    if (FsFat12_RetrieveNameFromDirectoryEntry(entry, _longFileName))
     {
         PrintDirectoryEntry(entry, _longFileName);
         ConsoleWriteString("\n");
@@ -242,7 +242,7 @@ bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
     char** testBuffer = (char**) ptrs[1];
     int* num = (int*) ptrs[3];
 
-    if (FsFat12_HandleName(entry, *testBuffer))
+    if (FsFat12_RetrieveNameFromDirectoryEntry(entry, *testBuffer))
     {
         // Get the Short File name if previous entries weren't a long filename directory.   
         if (strncmp(*testBuffer, compare, compareLen) == 0)
