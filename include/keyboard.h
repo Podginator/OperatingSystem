@@ -146,6 +146,8 @@ typedef int keycode;
 #define	KEY_PAGEDOWN          0x400f
 #define	KEY_SCROLLLOCK        0x4010
 #define	KEY_PAUSE             0x4011
+// On my VM on my mac Page Down seems to be the 0x120B
+#define KEY_ALTERNATE_PGDOWN  0x120B
 
 #define KEY_UNKNOWN			  (KEY_PAUSE + 1)
 

@@ -4,18 +4,28 @@
 #include <string.h>
 #include <console.h>
 
-// Video memory
-uint16_t *_videoMemory = (uint16_t *)0xB8000;
-
 #define CONSOLE_HEIGHT		25
 #define CONSOLE_WIDTH		80
+#define MAX_PAGE_STORAGE    3
+#define PAGE_SIZE           CONSOLE_HEIGHT * CONSOLE_WIDTH
+#define CONSOLE_STORAGE     PAGE_SIZE * MAX_PAGE_STORAGE
+#define DEFAULT_COLOUR      0x1F
+
+
+//Array of characters storing a buffer of characters.
+uint16_t _pageStored[CONSOLE_STORAGE] = { [0 ... CONSOLE_STORAGE - 1] = (DEFAULT_COLOUR << 8) }; 
+uint16_t *_pageOffset = _pageStored + (PAGE_SIZE * 2);
+
+// Video memory
+uint16_t *_videoMemory = (uint16_t*) 0xB8000;
 
 // Current cursor position
 uint8_t _cursorX = 0;
 uint8_t _cursorY = 0;
+int _currPage = MAX_PAGE_STORAGE - 1;
 
 // Current color
-uint8_t	_colour = 0;
+uint8_t	_colour = DEFAULT_COLOUR;
 
 char stringBuffer[40];
 char hexChars[] = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
@@ -45,6 +55,52 @@ void UpdateCursorPosition(int x, int y)
 	OutputByteToVideoController(0x3D5, cursorLocation);      
 }
 
+
+// Display the Page. 
+// @param the page to display. 
+void DisplayPage(size_t pageToDisplay)
+{
+	if (pageToDisplay > MAX_PAGE_STORAGE)
+	{
+		return;
+	}
+
+	uint16_t* offset = _pageStored + ((pageToDisplay * PAGE_SIZE));
+	for (int i = 0; i < PAGE_SIZE; i++)
+	{
+		_videoMemory[i] = offset[i];
+	}
+
+	//Hide the cursor on non pages.
+	if (pageToDisplay != MAX_PAGE_STORAGE - 1) 
+	{
+		UpdateCursorPosition(0, CONSOLE_HEIGHT+1);
+	}
+	else
+	{
+		UpdateCursorPosition(_cursorX, _cursorY);
+	}
+}
+
+// Scroll Page Up 
+void ConsoleScrollPageDown()
+{
+	if (_currPage > 0)	{
+		_currPage--;
+		DisplayPage(_currPage);
+	}
+}
+
+// Scroll Page Down
+void ConsoleScrollPageUp()
+{
+	if (_currPage < MAX_PAGE_STORAGE - 1)
+	{
+		_currPage++;
+		DisplayPage(_currPage);
+	}
+}
+
 void Scroll() 
 {
 	if (_cursorY >= CONSOLE_HEIGHT) 
@@ -54,15 +110,22 @@ void Scroll()
 
 		// Move current display up one line
 		int line25 = (CONSOLE_HEIGHT - 1) * CONSOLE_WIDTH;
+		memcpy(_pageStored, _pageStored + CONSOLE_WIDTH, ((CONSOLE_HEIGHT * CONSOLE_WIDTH) * MAX_PAGE_STORAGE) * 2);
+
 		for (int i = 0; i < line25; i++)
 		{
 			_videoMemory[i] = _videoMemory[i + CONSOLE_WIDTH];
+			_pageOffset[i] = _videoMemory[i];
 		}
+
+
 		// Clear the bottom line
 		for (int i = line25; i < line25 + 80; i++)
 		{
 			_videoMemory[i] = attribute | ' ';
+			_pageOffset[i] = _videoMemory[i];
 		}
+
 		_cursorY = 25;
 	}
 }
@@ -70,6 +133,13 @@ void Scroll()
 // Displays a character
 void ConsoleWriteCharacter(unsigned char c) 
 {
+	// Go down to the normal if we're print this.'
+	if(_currPage != MAX_PAGE_STORAGE - 1)
+	{
+		_currPage = MAX_PAGE_STORAGE - 1;
+		DisplayPage(MAX_PAGE_STORAGE - 1);
+	}
+
     uint16_t attribute = _colour << 8;
 
     if (c == 0x08 && _cursorX)
@@ -96,10 +166,11 @@ void ConsoleWriteCharacter(unsigned char c)
     else if (c >= ' ') 
 	{
 		// Printable characters
-
 		// Display character on screen
         uint16_t* location = _videoMemory + (_cursorY * CONSOLE_WIDTH + _cursorX);
+		uint16_t* storedLoc = _pageOffset + (_cursorY * CONSOLE_WIDTH + _cursorX);
         *location = c | attribute;
+		*storedLoc = *location;
         _cursorX++;
     }
     // If we are at edge of row, go to new line
@@ -115,7 +186,7 @@ void ConsoleWriteCharacter(unsigned char c)
 		_cursorY = CONSOLE_HEIGHT - 1;
 	}
     //! update hardware cursor
-	UpdateCursorPosition (_cursorX,_cursorY);
+	UpdateCursorPosition (_cursorX, _cursorY);
 }
 
 void ConsoleWriteInt(unsigned int i, unsigned int base) 
@@ -152,6 +223,9 @@ unsigned int ConsoleSetColour(const uint8_t c)
 // Set new cursor position
 void ConsoleGotoXY(unsigned int x, unsigned int y) 
 {
+	// Go to the current page, first.
+	DisplayPage(MAX_PAGE_STORAGE - 1);
+
 	if (_cursorX <= CONSOLE_WIDTH - 1)
 	{
 	    _cursorX = x;
@@ -187,19 +261,27 @@ int ConsoleGetHeight()
 	return CONSOLE_HEIGHT;
 }
 
-
 //! Clear screen
 void ConsoleClearScreen(const uint8_t c) 
 {
 	_colour = c;
 	uint16_t blank = ' ' | (c << 8);
-	for (int i = 0; i < 80*25; i++)
+	size_t i = 0;
+	for (; i < PAGE_SIZE; i++)
 	{
+		_pageStored[i] = blank;
         _videoMemory[i] = blank;
 	}
-    ConsoleGotoXY(0,0);
-}
 
+	// then ensure we also clear the storage.
+	for (; i < (MAX_PAGE_STORAGE * PAGE_SIZE); i++)
+	{
+		_pageStored[i] = blank;
+	}
+	
+	ConsoleGotoXY(0, 0);
+}
+	
 // Returns the current colour
 uint8_t ConsoleGetCurrentColour() 
 { 
@@ -207,8 +289,7 @@ uint8_t ConsoleGetCurrentColour()
 }
 
 // Display specified string
-
-void ConsoleWriteString(char* str) 
+void ConsoleWriteString(const char* str) 
 {
 	if (!str)
 	{

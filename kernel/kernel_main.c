@@ -77,9 +77,7 @@ void InitialisePhysicalMemory()
 void Initialise()
 {
 	ConsoleClearScreen(0x1F);
-	ConsoleWriteString("UODOS 32-bit Kernel. Kernel size is ");
-	ConsoleWriteInt(_bootInfo->KernelSize, 10);
-	ConsoleWriteString(" bytes\n");
+	ConsoleWriteString("Welcome to TomOs. PG_UP/F1 to ScrollUp, PG_Down/F2 to ScrollDown. \n");
 	HAL_Initialise();
 	InitialiseInterrupts();
 	InitialisePhysicalMemory();

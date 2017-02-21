@@ -29,12 +29,14 @@ void Run()
     memset(_prompt, '\0', 25);
     DiskCommand_Init();
     Command_Prompt("Command>");
+
     ConsoleWriteString(_prompt);
     while(isRunning) 
     { 
         keycode code = KeyboardGetCharacter();
-        
-        if (code == KEY_RETURN) { 
+
+        if (code == KEY_RETURN) 
+        { 
             _buffer[bufferCounter] = '\0';
             Command_ProcessCommand(_buffer);
             ConsoleWriteCharacter('\n');
@@ -51,7 +53,8 @@ void Run()
         } 
         else if (code == KEY_BACKSPACE) 
         {
-            if (bufferCounter > 0) { 
+            if (bufferCounter > 0) 
+            { 
                 int x, y;
                 ConsoleGetXY(&x, &y);
                 ConsoleGotoXY(x - 1, y);
@@ -60,6 +63,16 @@ void Run()
                 _buffer[--bufferCounter] = 0;
             }
         } 
+        else if (code == KEY_PAGEUP || code == KEY_F1 || code == KEY_UP)
+        {
+            ConsoleScrollPageDown();
+        }
+        else if (code == KEY_PAGEDOWN || code == KEY_F2 || code == KEY_DOWN || code == KEY_ALTERNATE_PGDOWN)
+        {
+            // There's a lot of options in the else if statement above. This is to ensure that it works on your machine. 
+            // I couldn't get PageDown, KeyDown to work. F1 and ALTERNATE_PGDown (Page down on my machine,)
+            ConsoleScrollPageUp();
+        }
         else if (code == KEY_TAB)
         {
             int space = strchr(_buffer, ' ');

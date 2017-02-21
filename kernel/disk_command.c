@@ -23,8 +23,8 @@ static inline void GetTimeCreated(uint16_t timeCreated, uint8_t* hour, uint8_t* 
 static inline FILE GetFileFromPath(char* dir, char* outPath);
 
 // Delegates Declarations
-static inline bool ListFileDelegate(pDirectoryEntry entry, uintptr_t*);
-static inline bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t*);
+static bool ListFileDelegate(pDirectoryEntry entry, uintptr_t*);
+static bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t*);
 
 //
 // Static Definition
@@ -125,6 +125,10 @@ static inline void PrintDirectoryEntry(const pDirectoryEntry entry, const char* 
     GetTimeCreated(entry->TimeCreated, &hour, &minutes, &seconds);
     ConsoleWriteInt(hour, 10);
     ConsoleWriteCharacter(':');
+    if (minutes < 10)
+    {
+        ConsoleWriteInt(0, 10);
+    }
     ConsoleWriteInt(minutes, 10);
 
     ConsoleWriteString("  ");
@@ -146,7 +150,7 @@ static inline void PrintDirectoryEntry(const pDirectoryEntry entry, const char* 
     ConsoleWriteString("  ");
 
     // Print the filesize
-    if (!(entry->Attrib & 0x10))
+    if (!(entry->Attrib & DIR_DIRECTORY))
     {
         ConsoleWriteInt(entry->FileSize, 10);
     }       
@@ -199,7 +203,10 @@ static inline FILE GetFileFromPath(char* dir, char* outPath)
         
         if (outPath)
         {
-            strcat(outPath, _pwd, "\\");
+            if (_pwd[1] != NULL) 
+            {
+                strcat(outPath, _pwd, "\\");
+            }
             strcat(outPath, outPath, dir);
         }
     } 
@@ -234,7 +241,14 @@ bool ListFileDelegate(pDirectoryEntry entry,  uintptr_t* ptrs)
     return false;
 }
 
-// AutoComplete Delegate
+// Fills a buffer with partial matches from the 
+// @param the Entry to read from
+// @param pts Pointers to needed parameters, 
+//            0 - str to compare to 
+//            1 - comparison length (passed to avoid recalcuating each time)
+//            2 - pointer to the buffer to store into 
+//            3 - num of entries retrieved. 
+// @return Always False, we want to navigate all the files. 
 bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
 {
     char* compare = (char*) ptrs[0];
@@ -249,7 +263,7 @@ bool AutoCompleteDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
         {
             size_t lenComplete = strlen(*testBuffer);
             *testBuffer += lenComplete + 1;
-            *(*testBuffer - 1) = ' ';
+            *(*testBuffer - 1) = ',';
             *num = *num + 1;
         }
     }
@@ -385,7 +399,7 @@ void DiskCommand_AutoComplete(char* path, int* num)
     if (*num == 1)
     {
         // If we've just found one, change the buffer 
-        int delimiterLoc = strchr(_tempBuffer, ' ');
+        int delimiterLoc = strchr(_tempBuffer, ',');
         memcpy(compare, _tempBuffer, delimiterLoc);
     }
     else if (*num > 0)

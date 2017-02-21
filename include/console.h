@@ -2,6 +2,13 @@
 #define _CONSOLE_H
 #include <stdint.h>
 
+
+// Scroll the Page up
+void ConsoleScrollPageDown();
+
+// Scroll the page Down
+void ConsoleScrollPageUp();
+
 // Output the specified character the current cursor position.  
 // The attribute at that position remains unchanged.
 
@@ -9,7 +16,7 @@ void ConsoleWriteCharacter(unsigned char c);
 
 // Write the null-terminated string str to the current cursor position on the screen
 
-void ConsoleWriteString(char* str); 
+void ConsoleWriteString(const char* str); 
 
 // Write the unsigned integer to the screen, using the specified base, e.g. for
 // the number to be displayed as a decimal number, you would specify base 10.  For 

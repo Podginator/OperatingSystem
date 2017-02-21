@@ -6,8 +6,6 @@
 #include <_null.h>
 #include <string.h>
 
-#define DIR_DIRECTORY  0x10
-
 // Store the offsets
 static uint32_t offsetFat;
 static uint32_t offsetRoot;
@@ -16,7 +14,6 @@ static uint32_t rootSize;
 
 // Store info into the FAT Table.
 static uint8_t FAT_Table[9 * SECTORS_PER_FAT_SECTOR];
-
 DirectoryEntry _tempEntries[ENTRIES_PER_SECTOR];
 
 // Temp Buffer for files.
@@ -27,6 +24,8 @@ bool _delegateIsLFN = false;
 // ** Forward Declarations ** 
 static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer);
 static inline FILE ConvertToFile(pDirectoryEntry entry, char* name);
+static inline void GetShortFileName(pDirectoryEntry entry, char* buffer);
+static inline void ConstructLongFilename(pLongFileNameEntry entry, char* buffer);
 
 // Delegate Declarations.
 static inline void IterateSubDirectory(FILE file, DirectoryDelegate fileFn, uint32_t* ptrs);
@@ -78,6 +77,64 @@ static inline void ExtractNextEntry(const char** filePath, char* filenameBuffer)
     *filePath += needle + 1;
 }
 
+// Retrieve the Short File Name from a directory entry
+// @param The entry to retrieve the name from 
+// @param filename the buffer to write the name too.
+static inline void GetShortFilename(pDirectoryEntry entry, char* filename)
+{
+    char* name = entry->Filename;
+    int counter = 0;
+    while(*name != ' ' && counter <= 8)
+    {
+        *filename++ = *name++;
+        counter++;
+    }
+
+    if (!(entry->Attrib & 0x10))
+    {
+        *filename++ = '.';
+        for (size_t i = 0; i < 3; i++)
+        {
+            *filename++ = entry->Ext[i];
+        }
+    }
+    *filename = 0;
+}
+
+// Construct the Long File name, appending to the correct place in the filename buffer. 
+// @param entry the long filenmame entry buffer 
+// @param filename the buffer we're appending too.
+static inline void ConstructLongFilename(pLongFileNameEntry lfnEntry, char* filename)
+{
+    bool isLast = (lfnEntry->SequenceNumber >> 6) != 0;
+    uint8_t sequenceNum =  lfnEntry->SequenceNumber & 0b00111111;
+    // Go to the correct part of the buffer.
+     filename += ((sequenceNum - 1) * 13);
+
+    size_t i = 0;
+    uint16_t* utfs = lfnEntry->Filename_One;
+    for (; i < 13 && *utfs; i++)
+    {
+        // Otherwise copy 
+        *filename++ = (char) *utfs++;
+        
+        if (i == 4) 
+        {
+            utfs = lfnEntry->Filename_Two;
+        }
+        else if (i == 10)
+        {
+            utfs = lfnEntry->Filename_Three;
+        }
+    }
+
+    if (isLast)
+    {
+        // nullterminate
+        *(filename) = 0;
+    }
+}
+
 //
 //    DELEGATE DECLARATION
 //
@@ -107,8 +164,8 @@ bool IterateSector(pDirectoryEntry entry, DirectoryDelegate fileFn, uintptr_t* p
             return true;
         }
         
-        tempEntry->HasLFN = (uint8_t) _delegateIsLFN;
-        _delegateIsLFN = tempEntry->Attrib & 0x0F;
+        tempEntry->HasLongFileName = (uint8_t) _delegateIsLFN;
+        _delegateIsLFN = tempEntry->Attrib & LONGFILENAME_ATTRIB;
 
         if (fileFn(tempEntry, ptrs))
         {
@@ -174,7 +231,7 @@ static bool MatchDelegate(pDirectoryEntry entry, uintptr_t* ptrs)
 
     if (FsFat12_RetrieveNameFromDirectoryEntry(entry, _longFileName))
     {
-        if (strcmp(_longFileName, nextFile) == 0) 
+        if (strcasecmp(_longFileName, nextFile) == 0) 
         {
             *res = ConvertToFile(entry, _longFileName);
             return true;
@@ -206,7 +263,7 @@ void FsFat12_Initialise()
     }
 }
 
-// Handle the Name
+// Handle the Name, Including Long File Names
 // @param the entry to handle the name for
 // @param the buffer to append to 
 // @param In/Out :True if the last entry checked was a Long File Name
@@ -215,63 +272,23 @@ bool FsFat12_RetrieveNameFromDirectoryEntry(pDirectoryEntry entry, char* fname)
     char* temp = fname;
 
     // do normal extraction, return true.
-    if (entry->Attrib != 0x0f && !(entry->HasLFN))
+    if (entry->Attrib != LONGFILENAME_ATTRIB && !(entry->HasLongFileName))
     {
-        char* name = entry->Filename;
-        int counter = 0;
-        while(*name != ' ' && counter <= 8)
-        {
-            *temp++ = *name++;
-            counter++;
-        }
-
-        if (!(entry->Attrib & 0x10))
-        {
-            *temp++ = '.';
-            for (size_t i = 0; i < 3; i++)
-            {
-                *temp++ = entry->Ext[i];
-            }
-        }
-        *temp = 0;
-
+        GetShortFilename(entry, temp);
+        // We will have the full file path.
         return true;
     } 
-    else if (entry->Attrib == 0x0f)
+    else if (entry->Attrib & LONGFILENAME_ATTRIB)
     {
         pLongFileNameEntry lfnEntry = (pLongFileNameEntry) entry;
-        bool isLast = (lfnEntry->SequenceNumber >> 6) != 0;
-        uint8_t sequenceNum =  lfnEntry->SequenceNumber & 0b00111111;
-        // Go to the correct part of the buffer.
-        temp += ((sequenceNum - 1) * 13);
-
-        size_t i = 0;
-        uint16_t* utfs = lfnEntry->Filename_One;
-        for (; i < 13 && *utfs; i++)
-        {
-            // Otherwise copy 
-            *temp++ = (char) *utfs++;
-            
-            if (i == 4) 
-            {
-                utfs = lfnEntry->Filename_Two;
-            }
-            else if (i == 10)
-            {
-                utfs = lfnEntry->Filename_Three;
-            }
-        }
-
-        if (isLast)
-        {
-            // nullterminate
-            *(temp) = 0;
-        }
-        return false;
+        ConstructLongFilename(lfnEntry, temp);
+        // We are a LongFileName, so will not have the full file path
+        return false; 
     }
-    else if (entry->HasLFN)
+    else if (entry->HasLongFileName)
     {
-        // Stored it with the Previous LFN entries
+        // We should have already called it with the previous entries and will 
+        // have retrieved it using those entries.
         return true;
     }
 
@@ -296,32 +313,8 @@ FILE FsFat12_Open(const char* filePath)
         return res;
     }
 
-    uintptr_t pointers[2];    
-    pointers[1] = (uintptr_t) &res;
-    bool done = false;     
-    do 
-    {
-        char nextFile[255];
-        ExtractNextEntry(&filePath, nextFile);
-        done = !(*filePath);
-
-        pointers[0] = (uintptr_t) nextFile;
-        FsFat12_IterateFolder(res, MatchDelegate, pointers);
-
-        if (done && res.Flags & (FS_FILE | FS_DIRECTORY))
-        {
-            return res; 
-        }
-        else if (!done && (res.Flags & (FS_INVALID | FS_FILE)))
-        {
-            res.Flags = FS_INVALID;
-            return res;
-        }
-    }
-    while (!done);
-
-    res.Flags = FS_INVALID;
-    return res;
+    // Then navigate from the root directory.
+    return FsFat12_OpenFrom(res, filePath);
 }
 
 // Traverse the directory upwards to the filepath we pass in
@@ -415,9 +408,6 @@ unsigned int FsFat12_Read(PFILE file, unsigned char* buffer, unsigned int length
         unsigned char* temp = buffer; 
         while (ok)
         {  
-            // Todo make better.
-            // Basically len = min(512, min(bytes_per_sector - remainder, length))
-            // there's gotta be a better way osf doing that.
             int len = BYTES_PER_SECTOR - remainder;
             len = len > increment ? increment : len; 
             len = lenRemaining > len ? len : lenRemaining;
