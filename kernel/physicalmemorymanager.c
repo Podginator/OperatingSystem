@@ -1,320 +1,361 @@
-// Physical Memory Manager
-
-#include <string.h>
+// The Implementation of the physical memory management.
 #include "physicalmemorymanager.h"
+#include <string.h>
 
-// Each byte in the memory map indicates 8 blocks of memory
+// The amount of blocks
+#define PMM_BLOCK_SIZE 4096
 
-#define PMM_BLOCKS_PER_BYTE 	8
+// The memory bitmap, as a 32 bit array pointer.
+uint32_t *_memBitmap = 0;
 
-// The block size is 4096 bytes (4K)
-#define PMM_BLOCK_SIZE			4096
+// The amount of total blocks.
+uint32_t _totalBlocks = 0;
 
-// Blocks are alligned on block size boundaries
+// The Total amount of blocks in use.
+uint32_t _usedBlocks = 0;
 
-#define PMM_BLOCK_ALIGNMENT		PMM_BLOCK_SIZE
+//Declare Private Functions
+inline static uint32_t getIndex(uint32_t);
+inline static uint32_t getSize(MemoryRegion *);
 
-// Size of physical memory
-
-static	uint32_t	_physicalMemorySize = 0;
-
-// number of blocks currently in use
-static	uint32_t	_usedBlocks = 0;
-
-// maximum number of available memory blocks
-
-static	uint32_t	_maximumBlockCount = 0;
-
-// Memory map bit array. Each bit represents a memory block
-
-static	uint32_t*	_memoryMap = 0;
-
-static uint32_t 	_memoryMapSize = 0;
-
-// Private functions
-
-// Set any bit within the memory map bit array
-//
-// This marks the block as being in use
-
-void MemoryMapSetBit(uint32_t bit) 
+// Returns the frame
+// @param base : The base of the address to get the frame from
+// @return The Index of the Frame at base.
+inline static uint32_t getIndex(uint32_t size)
 {
-	_memoryMap[bit / 32] |= (1 << (bit % 32));
+    // Get the remainder, if it's not 0 round up to the next instance of PMM_BLOCK_SIZE
+    uint32_t remainder = size % PMM_BLOCK_SIZE;
+    if (remainder == 0)
+    {
+        return (size / PMM_BLOCK_SIZE);
+    }
+
+    return (size + (PMM_BLOCK_SIZE - remainder)) / PMM_BLOCK_SIZE;
 }
 
-// Clear (unset) any bit within the memory map bit array.
-//
-// This marks the block as being available for use
-
-void MemoryMapClearBit(uint32_t bit) 
+// Get Size
+// @param region : Pointer to the memory region
+// @return The Size Of All the mem stored in the memory region, including gaps.
+inline static uint32_t getSize(MemoryRegion *region)
 {
-	_memoryMap[bit / 32] &= ~(1 << (bit % 32));
-}
+    MemoryRegion *temp = region;
+    MemoryRegion *lastPtr = temp;
+    int i = 0;
+    do
+    {
+        lastPtr = temp->Type == 1 ? temp : lastPtr;
+        temp++;
+    } while (temp->StartOfRegionLow != 0);
 
-// Test if any bit is set within the memory map bit array
-//
-// This tests to see if a block is in use
-
-bool MemoryMapTestBit(uint32_t bit) 
-{
-	return _memoryMap[bit / 32] &  (1 << (bit % 32));
-}
-
-// Find first free block in the bit array and returns its index
-
-uint32_t MemoryMapFindFirstFree() 
-{
-	for (uint32_t i = 0; i < _memoryMapSize; i++)
-	{
-		// If the entire dword is marked as in-use, we do not
-		// need to check every bit
-		if (_memoryMap[i] != 0xffffffff)
-		{
-			for (int j = 0; j < 32; j++) 
-			{				
-				// Test each bit in the dword
-				uint32_t bit = 1 << j;
-				if (!(_memoryMap[i] & bit))
-				{
-					// Return offset of bit in bitmap
-					return i * 32 + j;
-				}
-			}
-		}
-	}
-	// Indicate that no free blocks have been found
-	return 0xFFFFFFFF;
-}
-
-// Finds first free "size" number of blocks and returns its index
-
-uint32_t MemoryMapFindFirstFreeSize(size_t size) 
-{
-	if (size == 0)
-	{
-		return 0xFFFFFFFF;
-	}
-	uint32_t startingBit = MemoryMapFindFirstFree();
-	if (size == 1 || startingBit == 0xFFFFFFFF)
-	{
-		return startingBit;
-	}
-	while (startingBit + size <= _maximumBlockCount)
-	{
-		// Search for first free bit
-		while (MemoryMapTestBit(startingBit))
-		{
-			startingBit++;
-		}
-		// Now look at the following bits to see if there are enough free contiguous blocks
-		uint32_t freeBlocks = 0;
-		while (freeBlocks < size && !MemoryMapTestBit(startingBit + freeBlocks))
-		{
-			freeBlocks++;
-		}
-		if (freeBlocks == size)
-		{
-			return startingBit;
-		}
-		// Adjust startingBit to point to the next non-free block
-		startingBit = startingBit + freeBlocks;
-	}
-	return 0xFFFFFFFF;
+    return (uint32_t)(lastPtr->StartOfRegionLow + lastPtr->SizeOfRegionLow);
 }
 
 // Initialise the physical memory manager
-//
-// On entry: memSize = Amount of memory
-//			 bitmap  = Address of the area of memory we will use for our bitmap
-
-uint32_t PMM_Initialise(BootInfo * bootInfo, uint32_t bitmap) 
+// @param bootInfo the Information about the BootDevice
+// @param bitmap   the location of the bitmap in memory
+// @return The Size of the bitmap in bytes.
+uint32_t PMM_Initialise(BootInfo *bootInfo, uint32_t bitmap)
 {
-	MemoryRegion *	region = bootInfo->MemoryRegions;
-	uint32_t totalAddressableMemory;
-	uint32_t amountOfAvailableMemory = 0;
-	int i = 0;
-	while (i == 0 || region[i].StartOfRegionLow != 0)
-	{
-		if (region[i].Type == MEMORY_REGION_AVAILABLE)
-		{
-			amountOfAvailableMemory += region[i].SizeOfRegionLow;
-			totalAddressableMemory = region[i].StartOfRegionLow + region[i].SizeOfRegionLow;
-		}
-		i++;
-	}
-	_physicalMemorySize	= amountOfAvailableMemory  / 1024;
-	if (bitmap % PMM_BLOCK_SIZE != 0)
-	{
-		bitmap = (bitmap / PMM_BLOCK_SIZE + 1) * PMM_BLOCK_SIZE;
-	}	
-	_memoryMap = (uint32_t*)bitmap;
-	_maximumBlockCount = amountOfAvailableMemory / PMM_BLOCK_SIZE;
-	_usedBlocks	= _maximumBlockCount;
+    // Get the total uint32_t
+    MemoryRegion *region = bootInfo->MemoryRegions;
+    // Ensure that the _totalSize is divisible by 4096, this should echo down
+    // So that the totalblocks is divisble by 32 and byteSize is divisible by 4. 
+    uint32_t totalSize = getSize(region);
+    _totalBlocks = totalSize / PMM_BLOCK_SIZE;
+    _totalBlocks += _totalBlocks % 32; 
+    _usedBlocks = _totalBlocks;
+    _memBitmap = (uint32_t *)bitmap;
+    uint32_t totalBlockStorageSize = (_totalBlocks / 8);
 
-	uint32_t sizeOfMemoryMap = totalAddressableMemory / PMM_BLOCK_SIZE / PMM_BLOCKS_PER_BYTE;
-	if (sizeOfMemoryMap % 4 != 0)
-	{
-		sizeOfMemoryMap = (sizeOfMemoryMap / 4 + 1) * 4;
-	}	
-	_memoryMapSize = sizeOfMemoryMap / 4;
-	// By default, all of memory is in use
-	memset(_memoryMap, 0xff, sizeOfMemoryMap );
-	i = 0;
-	while (i == 0 || region[i].StartOfRegionLow != 0)
-	{
-		if (region[i].Type == MEMORY_REGION_AVAILABLE)
-		{
-			PMM_MarkRegionAsAvailable(region[i].StartOfRegionLow, region[i].SizeOfRegionLow);
-			
-		}
-		i++;
-	}
-	return sizeOfMemoryMap;
+    // Then set them all as used
+    memset((void *)_memBitmap, ~0, totalBlockStorageSize);
+
+    // // TEST:: PMM_AvailableCount
+    // uint32_t totalBlocksAvailable = PMM_GetAvailableBlockCount();
+    // uint32_t totalSetBlocks = PMM_GetUsedBlockCount();
+
+    // ConsoleWriteString("\nTotal Blocks: ");
+    // ConsoleWriteInt(totalBlocksAvailable, 10);
+    // if (totalBlocksAvailable == totalSetBlocks) 
+    // {
+    //     ConsoleWriteString("\nAvailable (Total) Same as used after Memset");
+    // }
+
+    // if (totalBlocksAvailable == 8192) 
+    // { 
+    //     ConsoleWriteString("\nExpected Amount Returned in Bochs 32mb");
+    // }
+
+    // TEST :: (Have we assigned all the bits correctly)
+    // __asm__("xchg %bx, %bx \n\t");
+
+
+    // Set the regions that are available for us to use.
+    do
+    {
+        if (region->Type == 1)
+        {
+            PMM_MarkRegionAsAvailable(region->StartOfRegionLow, region->SizeOfRegionLow);
+        }
+        region++;
+    } while (region->StartOfRegionLow != 0);
+
+    return totalBlockStorageSize;
 }
 
-// Mark an area of physical memory as being available for use
-
-void PMM_MarkRegionAsAvailable(uint32_t base, size_t size) 
+// Mark a region as being available for use
+// @param base : where we want to set the memory is available.
+// @param size : the size of the region we want to claim.
+void PMM_MarkRegionAsAvailable(uint32_t base, size_t size)
 {
-	uint32_t align = base / PMM_BLOCK_SIZE;
-	uint32_t offsetInBlock = base % PMM_BLOCK_SIZE;
-	uint32_t adjustedSize = offsetInBlock == 0 ? size : (PMM_BLOCK_SIZE - offsetInBlock) + size;
-	int blockCount = adjustedSize / PMM_BLOCK_SIZE;
-	if (adjustedSize % PMM_BLOCK_SIZE != 0)
-	{
-		blockCount++;
-	}
-	for (int blocks = blockCount; blocks > 0; blocks--) 
-	{
-		MemoryMapClearBit(align++);
-		_usedBlocks--;
-	}
+    // find the Block it's located in and the number needed.
+    uint32_t blockOffset = base % PMM_BLOCK_SIZE;
+    // This should round the block location down to the nearest PMM_BLOCK_SIZE
+    uint32_t blockLoc = ((base - blockOffset) / PMM_BLOCK_SIZE);
+    // This should adjust the size to accomodate for the rounding down.  
+    uint32_t index = getIndex(size + blockOffset);
+
+    // Ensure that we cant' set any regions above the total amount of blocks
+    if ((blockLoc + index) > _totalBlocks)
+    {
+        return;
+    }
+
+    while (index)
+    {
+        // If the bit is already available, no need to decrement.
+        // Use these variables to avoid recalculating them when we set.
+        uint32_t bitFiddle = 0x1 << (blockLoc % 32);
+        uint32_t bitIndex = blockLoc / 32;
+        if (_memBitmap[bitIndex] & bitFiddle)
+        {
+            // Index into the nearest address of an 32bit array
+            _memBitmap[bitIndex] &= ~bitFiddle;
+            _usedBlocks--;
+        }
+        // Decrement the index,
+        index--;
+        blockLoc++;
+    }
 }
 
-// Mark a region of physical memory as being unavailable for use
-
-void PMM_MarkRegionAsUnavailable(uint32_t base, size_t size) 
+// Mark a region as not being available for use
+// @param base : where we want to set the memory is available.
+// @param size : the size of the region we want to claim.
+void PMM_MarkRegionAsUnavailable(uint32_t base, size_t size)
 {
-	uint32_t align = base / PMM_BLOCK_SIZE;
-	uint32_t offsetInBlock = base % PMM_BLOCK_SIZE;
-	uint32_t adjustedSize = offsetInBlock == 0 ? size : (PMM_BLOCK_SIZE - offsetInBlock) + size;
-	int blockCount = adjustedSize / PMM_BLOCK_SIZE;
-	if (adjustedSize % PMM_BLOCK_SIZE != 0)
-	{
-		blockCount++;
-	}
-	for (int blocks = blockCount; blocks > 0; blocks--) 
-	{
-		MemoryMapSetBit(align++);
-		_usedBlocks++;
-	}
+    // find the Block it's located in and the number needed.
+    uint32_t blockOffset = base % PMM_BLOCK_SIZE;
+    // This should round the block location down to the nearest PMM_BLOCK_SIZE
+    uint32_t blockLoc = ((base - blockOffset) / PMM_BLOCK_SIZE);
+    // This should adjust the size to accomodate for the rounding down.  
+    uint32_t index = getIndex(size + blockOffset);
+
+    // Is this correct?
+    if (blockLoc + index > _totalBlocks)
+    {
+        return;
+    }
+
+    while (index)
+    {
+        // If the bit is already available, no need to decrement.
+        uint32_t bitFiddle = 0x1 << (blockLoc % 32);
+        uint32_t bitIndex = blockLoc / 32;
+        if (!(_memBitmap[bitIndex] & bitFiddle))
+        {
+            // Index into the nearest address of an 32bit array
+            _memBitmap[bitIndex] |= bitFiddle;
+            _usedBlocks++;
+        }
+
+        blockLoc++;
+        index--;
+    }
 }
 
 // Allocate a single memory block
-
-void* PMM_AllocateBlock() 
+// Here we can just use the BSR instruction with a ~ to find where the first
+// 0 in a 32bit map is. Once we've found a free memory block.ah
+// This saves potentially 31 jumps. (If the 0 is in the MSB.)
+// @return the returned memory address.
+void* PMM_AllocateBlock()
 {
-	if (PMM_GetFreeBlockCount() <= 0)
-	{
-		// We are out of memory
-		return 0;	
-	}
-	uint32_t frame = MemoryMapFindFirstFree();
-	if (frame == 0xFFFFFFFF)
-	{
-		// Unable to allocate a block of memory
-		return 0;	
-	}
-	// Set the block as being used
-	MemoryMapSetBit(frame);
-	// Convert to a physical address
-	uint32_t addr = frame * PMM_BLOCK_SIZE;
-	_usedBlocks++;
-	return (void*)addr;
+    uint32_t* temp = _memBitmap;
+    uint32_t iter =  _totalBlocks >> 5;
+
+    if (PMM_GetFreeBlockCount() != 0) 
+    {
+        // Temp ++ Iterates over 32 bit regions of bits. 
+        for (uint32_t i = 0; i < iter; i++, temp++) 
+        {
+            int tempVal = *temp;
+            // Are all the bits set? 
+            if (tempVal != ~0)
+            {
+                int ctz = __builtin_ctz(~tempVal);
+                uint32_t memAddr = (((i * 32) + ctz) * PMM_BLOCK_SIZE);
+                PMM_MarkRegionAsUnavailable(memAddr, PMM_GetBlockSize());
+                return (void*) memAddr;
+            }
+        }
+    }
+
+    // We've failed. Return NULL.
+    return (void*) NULL;
 }
 
 // Free a single memory block
-
-void PMM_FreeBlock(void* p) 
+// @param the memory we want to free.
+void PMM_FreeBlock(void *p)
 {
-	uint32_t addr = (uint32_t)p;
-	uint32_t frame = addr / PMM_BLOCK_SIZE;
+    uint32_t addr = (uint32_t)p;
 
-	MemoryMapClearBit(frame);
-	_usedBlocks--;
+    // We should never attempt to free null
+    if (addr != NULL)
+    {
+        PMM_MarkRegionAsAvailable(addr, 1);
+    }
 }
 
-// Allocate size blocks of memory
-
-void * PMM_AllocateBlocks(size_t size) 
+// uses __builtin_ctz(num) to count the trailing bits using the BSR instruction
+// This reduces the amount of loops and replaces it with a performant assembly instruction.
+// This is faster than a straight for loop. 
+// @param needed : the amount of frames needed
+// @return the free memory, or NULL if no memory available.
+void* PMM_AllocateBlocks(size_t needed)
 {
-	if (PMM_GetFreeBlockCount() <= size)
-	{
-		// Not enough free space
-		return 0;	
-	}
-	uint32_t frame = MemoryMapFindFirstFreeSize(size);
-	if (frame == 0xFFFFFFFF)
-	{
-		// Not enough space
-		return 0;	
-	}
-	for (uint32_t i=0; i < size; i++)
-	{
-		// Mark the memory as used
-		MemoryMapSetBit(frame+i);
-	}
-	uint32_t addr = frame * PMM_BLOCK_SIZE;
-	_usedBlocks += size;
-	return (void*)addr;
+    // First, check that we have enough blocks available before
+    // looping at all. This avoids needless cycles.
+    if (needed <= PMM_GetFreeBlockCount())
+    {
+        // Instantiate variables inside, as we only need them in this block,
+        // and it is more efficient to do so.
+        uint32_t storedCounter = 0;
+        // Total = TotalBlocks / 32 (or >> 5)
+        uint32_t total = (_totalBlocks >> 5);
+        uint32_t *temp = _memBitmap;
+        void *index = NULL;
+
+        // Temp ++ Iterates over 32 bit regions of blocks.
+        for (uint32_t i = 0; i < total; i++, temp++)
+        {
+            uint32_t tempVal = (uint32_t)*temp;
+            // Are all the bits set? If so we can skip this block.
+            if (tempVal != ~0)
+            {
+                
+                int seenCounter = 0;
+                // Iterate through until we've seen all _totalBlocks
+                while (seenCounter < 32)
+                {
+                    //  __builtin_ctz() uses assembly instruction BitScan, which is very efficient at finding trailing bitSet
+                    //  It has undefined behaviour with 0, but we know in this case that it'll be 32 trailing 0s.
+                    int ctz = (tempVal != 0) ? __builtin_ctz(tempVal) : 32;
+                    seenCounter += ctz;
+                    storedCounter += ctz;
+
+                    if (storedCounter >= needed)
+                    {
+                        // If we've found enough bits (there were >= needed trailing bits)
+                        // And we weren't just trying to get to the next 0 in the LSB.
+                        // Then return the index of the free 'contiguous bits'
+                        index = (void *)(((i * 32) + seenCounter - needed - (storedCounter - needed)) * PMM_BLOCK_SIZE);
+                        PMM_MarkRegionAsUnavailable((uint32_t)index, needed * PMM_BLOCK_SIZE);
+
+                        // If we didn't the above statement we'll return null here.
+                        return index;
+                    }
+
+                    // rorl so that during the next iteration we are observing a set of free bits
+                    asm("rorl %1, %0 "
+                        : "+r"(tempVal)
+                        : "c"((uint8_t)ctz));
+
+                    // Then find the next 0 bit and ensure that the next iteration will have a '0' in the lsb.
+                    ctz = (~tempVal != 0) ? __builtin_ctz(~tempVal) : 32;
+
+                    if (ctz > 0 && seenCounter < 32)
+                    {
+                        seenCounter += ctz;
+                        // if there were trailing zeros we've hit a one, so reset our variables.
+                        storedCounter = 0;
+                        // And rotate to get the 0bit in the lsb.
+                        asm("rorl %1, %0 "
+                            : "+r"(tempVal)
+                            : "c"((uint8_t)ctz));
+                    }
+                }
+            }
+            else
+            {
+                // If we went from 00000000 to 11111111
+                // We wouldn't be able to reset the stored.
+                // So reset it here.
+                storedCounter = 0;
+            }
+        }
+    }
+
+    // We've failed. Return NULL
+    return (void*) NULL;
 }
 
 // Free size blocks
-
-void PMM_FreeBlocks(void* p, size_t size) 
+// @param The Memory we want to free
+// @param The size of the memory location we want to free?
+void PMM_FreeBlocks(void *p, size_t size)
 {
-	uint32_t addr = (uint32_t)p;
-	uint32_t frame = addr / PMM_BLOCK_SIZE;
+    //Convert to mem location
+    uint32_t baseLoc = (uint32_t)p;
 
-	for (uint32_t i = 0; i < size; i++)
-	{
-		// Mark the memory as freed
-		MemoryMapClearBit(frame+i);
-	}
-	_usedBlocks -= size;
+    // We should never attempt to free null
+    if (baseLoc != NULL)
+    {
+        PMM_MarkRegionAsAvailable(baseLoc, (size * PMM_BLOCK_SIZE));
+    }
 }
 
-// Get the amount of physical memory
-
-size_t PMM_GetAvailableMemorySize() 
+// Get the amount of available physical memory (in K)
+// @return the size of the available memory in kb.
+uint32_t PMM_GetAvailableMemorySize()
 {
-	return _physicalMemorySize;
+    // The free blocks * 4096 (Bytes in a block) / 1024
+    return (PMM_GetFreeBlockCount() * PMM_BLOCK_SIZE) >> 10;
 }
 
-// Get the total number of blocks
-
-uint32_t PMM_GetAvailableBlockCount() 
+// Get the total number of blocks of available memory
+// @return the available blocks. (Is this how many are available, or the total. I don't know.)
+uint32_t PMM_GetAvailableBlockCount()
 {
-	return _maximumBlockCount;
+    return _totalBlocks;
 }
 
-uint32_t PMM_GetUsedBlockCount() 
+// Get the number of used blocks of available memory
+// @return the used blocks
+uint32_t PMM_GetUsedBlockCount()
 {
-	return _usedBlocks;
+    return _usedBlocks;
 }
 
-uint32_t PMM_GetFreeBlockCount() 
+// Get the number of free blocks of available memory
+// @return the free blocks remaining. (Is this not available)
+uint32_t PMM_GetFreeBlockCount()
 {
-	return _maximumBlockCount - _usedBlocks;
+    return _totalBlocks - _usedBlocks;
 }
 
-uint32_t PMM_GetBlockSize() 
+// Get the size of a block
+// @return the Block Size
+uint32_t PMM_GetBlockSize()
 {
-	return PMM_BLOCK_SIZE;
+    return PMM_BLOCK_SIZE;
 }
 
+// Return the address of the memory map
+// @return the address to the mem map
 uint32_t PMM_GetMemoryMap()
 {
-	return (uint32_t)_memoryMap;
+    // We have to convert it back to a 32 bit address before returning
+    return (uint32_t) _memBitmap;
 }
-
